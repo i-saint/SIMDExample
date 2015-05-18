@@ -6,14 +6,14 @@
 const int ParticleCount = 1024 * 4;
 const int LoopCount = 16;
 
-template<class F>
-void Test(const F &f, const char *name)
+void Test(peUpdateRoutine r, const char *name)
 {
     float average = 0.0f;
     peContext *ctx = peCreateContext(ParticleCount);
+    peSetUpdateRoutine(ctx, r);
     for (int i = 0; i < LoopCount; ++i) {
         clock_t t = clock();
-        f(ctx, 1.0f / 60.0f);
+        peUpdate(ctx, 1.0f / 60.0f);
         average += float(clock() - t) / CLOCKS_PER_SEC * 1000.0f;
     }
     peDestroyContext(ctx);
@@ -23,8 +23,8 @@ void Test(const F &f, const char *name)
 
 int main(int argc, char *argv[])
 {
-    Test(peUpdate_Plain, "Test_Plain");
-    Test(peUpdate_SIMD, "Test_SIMD");
-    Test(peUpdate_SIMDSoA, "Test_SIMDSoA");
-    Test(peUpdate_ISPC, "Test_ISPC");
+    Test(peE_Plain,     "Test_Plain"    );
+    Test(peE_SIMD,      "Test_SIMD"     );
+    Test(peE_SIMDSoA,   "Test_SIMDSoA"  );
+    Test(peE_ISPC,      "Test_ISPC"     );
 }

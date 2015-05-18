@@ -39,11 +39,20 @@ public:
 };
 peCopyToTextureBase* peCreateCopyToTextureD3D11(void *device);
 
+typedef void(__stdcall peCS)(float v, int begin, int end);
 
+enum peUpdateRoutine
+{
+    peE_Plain,
+    peE_SIMD,
+    peE_SIMDSoA,
+    peE_ISPC,
+    peE_CSharp,
+};
 
 peCLinkage peExport peContext*  peCreateContext(int n);
 peCLinkage peExport void        peDestroyContext(peContext *ctx);
-peCLinkage peExport void        peUpdate_Plain(peContext *ctx, float dt);
-peCLinkage peExport void        peUpdate_SIMD(peContext *ctx, float dt);
-peCLinkage peExport void        peUpdate_SIMDSoA(peContext *ctx, float dt);
-peCLinkage peExport void        peUpdate_ISPC(peContext *ctx, float dt);
+peCLinkage peExport void        peSetUpdateRoutine(peContext *ctx, peUpdateRoutine v);
+peCLinkage peExport void        peSetParticleSize(peContext *ctx, float v);
+peCLinkage peExport void        peUpdate(peContext *ctx, float dt);
+peCLinkage peExport void        peCopyDataToTexture(peContext *ctx, void *texture, int width, int height);

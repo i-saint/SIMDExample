@@ -26,26 +26,33 @@ void peAlignedFree(void *p)
 }
 
 
+peCopyToTextureBase *g_CopyToTexture;
+
 class peContext
 {
 public:
     peContext(int n);
     ~peContext();
 
-    void update_Plain(float dt);
-    void update_SIMD(float dt);
-    void update_SIMDSoA(float dt);
-    void update_ISPC(float dt);
+    void setParticleSize(float v);
+    void setUpdateRoutine(peUpdateRoutine v);
+    void update(float dt);
+    void copyDataToTexture(void *texture, int width, int height);
 
 private:
     void updateVelocity_Plain(float dt, int begin ,int end);
     void integrate_Plain(float dt, int begin, int end);
+    void update_Plain(float dt);
 
     void updateVelocity_SIMD(float dt, int begin, int end);
     void integrate_SIMD(float dt, int begin, int end);
+    void update_SIMD(float dt);
 
     void updateVelocity_SIMDSoA(float dt, int begin, int end);
     void integrate_SIMDSoA(float dt, int begin, int end);
+    void update_SIMDSoA(float dt);
+
+    void update_ISPC(float dt);
 
 private:
     peParticle *m_particles;
@@ -54,6 +61,9 @@ private:
 
     float m_particle_size;
     float m_pressure_stiffness;
+
+    peUpdateRoutine m_routine;
+    bool m_multi_threading;
 };
 
 
@@ -61,6 +71,8 @@ peContext::peContext(int n)
     : m_particle_count(n)
     , m_particle_size(0.1f)
     , m_pressure_stiffness(1000.0f)
+    , m_routine(peE_ISPC)
+    , m_multi_threading(true)
 {
     m_particles = (peParticle*)peAlignedAlloc(sizeof(peParticle)*n);
     m_soa.pos_x = (float*)peAlignedAlloc(sizeof(float)*n);
@@ -70,6 +82,7 @@ peContext::peContext(int n)
     m_soa.vel_y = (float*)peAlignedAlloc(sizeof(float)*n);
     m_soa.vel_z = (float*)peAlignedAlloc(sizeof(float)*n);
 
+    // set random position
     std::mt19937 rand;
     std::uniform_real_distribution<float> dist(-5.0f, 5.0f);
     const float4 zero4 = {0.0f};
@@ -80,7 +93,6 @@ peContext::peContext(int n)
     }
 }
 
-
 peContext::~peContext()
 {
     peAlignedFree(m_particles);
@@ -90,6 +102,39 @@ peContext::~peContext()
     peAlignedFree(m_soa.vel_x);
     peAlignedFree(m_soa.vel_y);
     peAlignedFree(m_soa.vel_z);
+}
+
+
+void peContext::setParticleSize(float v)
+{
+    m_particle_size = v;
+}
+
+void peContext::setUpdateRoutine(peUpdateRoutine v)
+{
+    m_routine = v;
+}
+
+
+void peContext::update(float dt)
+{
+    switch (m_routine)
+    {
+    case peE_Plain:     update_Plain(dt);   break;
+    case peE_SIMD:      update_SIMD(dt);    break;
+    case peE_SIMDSoA:   update_SIMDSoA(dt); break;
+    case peE_ISPC:      update_ISPC(dt);    break;
+    case peE_CSharp: break;
+    default: break;
+    }
+}
+
+
+void peContext::copyDataToTexture(void *texture, int width, int height)
+{
+    if (g_CopyToTexture) {
+        g_CopyToTexture->copy(texture, width, height, m_particles, sizeof(peParticle)*m_particle_count);
+    }
 }
 
 void peContext::updateVelocity_Plain(float dt, int begin, int end)
@@ -479,7 +524,90 @@ void peContext::update_ISPC(float dt)
 peCLinkage peExport peContext* peCreateContext(int n) { return new peContext(n); }
 peCLinkage peExport void peDestroyContext(peContext *ctx) { delete ctx; }
 
-peCLinkage peExport void peUpdate_Plain(peContext *ctx, float dt) { ctx->update_Plain(dt); }
-peCLinkage peExport void peUpdate_SIMD(peContext *ctx, float dt) { ctx->update_SIMD(dt); }
-peCLinkage peExport void peUpdate_SIMDSoA(peContext *ctx, float dt) { ctx->update_SIMDSoA(dt); }
-peCLinkage peExport void peUpdate_ISPC(peContext *ctx, float dt) { ctx->update_ISPC(dt); }
+peCLinkage peExport void peSetParticleSize(peContext *ctx, float v)
+{
+    ctx->setParticleSize(v);
+}
+
+peCLinkage peExport void peSetUpdateRoutine(peContext *ctx, peUpdateRoutine v)
+{
+    ctx->setUpdateRoutine(v);
+}
+
+peCLinkage peExport void peUpdate(peContext *ctx, float dt)
+{
+    ctx->update(dt);
+}
+
+peCLinkage peExport void peCopyDataToTexture(peContext *ctx, void *texture, int width, int height)
+{
+    ctx->copyDataToTexture(texture, width, height);
+}
+
+
+
+
+
+// Graphics device identifiers in Unity
+enum GfxDeviceRenderer
+{
+    kGfxRendererOpenGL = 0,          // OpenGL
+    kGfxRendererD3D9,                // Direct3D 9
+    kGfxRendererD3D11,               // Direct3D 11
+    kGfxRendererGCM,                 // Sony PlayStation 3 GCM
+    kGfxRendererNull,                // "null" device (used in batch mode)
+    kGfxRendererHollywood,           // Nintendo Wii
+    kGfxRendererXenon,               // Xbox 360
+    kGfxRendererOpenGLES,            // OpenGL ES 1.1
+    kGfxRendererOpenGLES20Mobile,    // OpenGL ES 2.0 mobile variant
+    kGfxRendererMolehill,            // Flash 11 Stage3D
+    kGfxRendererOpenGLES20Desktop,   // OpenGL ES 2.0 desktop variant (i.e. NaCl)
+    kGfxRendererCount
+};
+
+// Event types for UnitySetGraphicsDevice
+enum GfxDeviceEventType {
+    kGfxDeviceEventInitialize = 0,
+    kGfxDeviceEventShutdown,
+    kGfxDeviceEventBeforeReset,
+    kGfxDeviceEventAfterReset,
+};
+
+peCopyToTextureBase* peCreateCopyToTextureD3D9(void *device);
+peCopyToTextureBase* peCreateCopyToTextureD3D11(void *device);
+peCopyToTextureBase* peCreateCopyToTextureOpenGL(void *device);
+
+#define peSupportD3D11
+
+peCLinkage peExport void UnitySetGraphicsDevice(void* device, int deviceType, int eventType)
+{
+    if (eventType == kGfxDeviceEventInitialize) {
+#ifdef peSupportD3D9
+        if (deviceType == kGfxRendererD3D9)
+        {
+            // todo
+        }
+#endif // peSupportD3D9
+#ifdef peSupportD3D11
+        if (deviceType == kGfxRendererD3D11)
+        {
+            g_CopyToTexture = peCreateCopyToTextureD3D11(device);
+        }
+#endif // peSupportD3D11
+#ifdef peSupportOpenGL
+        if (deviceType == kGfxRendererOpenGL)
+        {
+            g_CopyToTexture = peCreateCopyToTextureOpenGL(device);
+        }
+#endif // peSupportOpenGL
+    }
+
+    if (eventType == kGfxDeviceEventShutdown) {
+        delete g_CopyToTexture;
+        g_CopyToTexture = nullptr;
+    }
+}
+
+peCLinkage peExport void UnityRenderEvent(int eventID)
+{
+}
