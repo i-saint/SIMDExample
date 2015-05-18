@@ -19,10 +19,10 @@ struct Context
 };
 
 
-export void UpdatePressure(uniform Context &ctx)
+export void UpdatePressure(uniform Context &ctx, uniform int begin, uniform int end)
 {
     // パーティクル同士の押し返し
-    for(uniform int i=0; i<ctx.particle_count; ++i) {
+    for(uniform int i=begin; i<end; ++i) {
         uniform float3 pos1 = {ctx.pos_x[i], ctx.pos_y[i], ctx.pos_z[i] };
         float3 accel = {0.0f, 0.0f, 0.0f};
         for(uniform int j=0; j<ctx.particle_count; j+=programCount) {
@@ -44,8 +44,8 @@ export void UpdatePressure(uniform Context &ctx)
 
     // 床との衝突
     uniform float3 floor_normal = {0.0f, 1.0f, 0.0f};
-    uniform float floor_distance = 5.0f;
-    for (uniform int i=0; i<ctx.particle_count; i+=programCount) {
+    uniform float floor_distance = 0.0f;
+    for (uniform int i=begin; i<end; i+=programCount) {
         int is = i + programIndex;
         float3 pos = {ctx.pos_x[is], ctx.pos_y[is], ctx.pos_z[is] };
         float3 vel = {ctx.vel_x[is], ctx.vel_y[is], ctx.vel_z[is] };
@@ -60,7 +60,7 @@ export void UpdatePressure(uniform Context &ctx)
     // 重力加速
     uniform float3 gravity_direction = {0.0f, -1.0f, 0.0f};
     uniform float gravity_strength = 5.0f;
-    for (uniform int i=0; i<ctx.particle_count; i+=programCount) {
+    for (uniform int i=begin; i<end; i+=programCount) {
         int is = i + programIndex;
         float3 vel = {ctx.vel_x[is], ctx.vel_y[is], ctx.vel_z[is] };
         vel = vel + (gravity_direction * gravity_strength * ctx.timestep);
@@ -70,9 +70,9 @@ export void UpdatePressure(uniform Context &ctx)
     }
 }
 
-export void Integrate(uniform Context &ctx)
+export void Integrate(uniform Context &ctx, uniform int begin, uniform int end)
 {
-    for(uniform int i=0; i<ctx.particle_count; i+=programCount) {
+    for(uniform int i=begin; i<end; i+=programCount) {
         int is = i + programIndex;
         float3 pos = {ctx.pos_x[is], ctx.pos_y[is], ctx.pos_z[is] };
         float3 vel = {ctx.vel_x[is], ctx.vel_y[is], ctx.vel_z[is] };
