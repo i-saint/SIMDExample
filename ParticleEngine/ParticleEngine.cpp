@@ -1,9 +1,11 @@
 ﻿#include <cstdlib>
 #include <algorithm>
 #include <random>
+#include <ppl.h>
 #include "ParticleEngine.h"
 #include "ParticleCore_ispc.h"
 
+using namespace concurrency;
 
 void* peAlignedAlloc(size_t size, size_t align)
 {
@@ -26,6 +28,8 @@ void peAlignedFree(void *p)
 }
 
 
+
+
 peCopyToTextureBase *g_CopyToTexture;
 
 class peContext
@@ -34,22 +38,24 @@ public:
     peContext(int n);
     ~peContext();
 
-    void setParticleSize(float v);
     void setUpdateRoutine(peUpdateRoutine v);
+    void enbaleMultiThreading(bool v);
+    void setParticleSize(float v);
+
     void update(float dt);
     void copyDataToTexture(void *texture, int width, int height);
 
 private:
     void updateVelocity_Plain(float dt, int begin ,int end);
-    void integrate_Plain(float dt, int begin, int end);
+    void updatePosition_Plain(float dt, int begin, int end);
     void update_Plain(float dt);
 
     void updateVelocity_SIMD(float dt, int begin, int end);
-    void integrate_SIMD(float dt, int begin, int end);
+    void updatePosition_SIMD(float dt, int begin, int end);
     void update_SIMD(float dt);
 
     void updateVelocity_SIMDSoA(float dt, int begin, int end);
-    void integrate_SIMDSoA(float dt, int begin, int end);
+    void updatePosition_SIMDSoA(float dt, int begin, int end);
     void update_SIMDSoA(float dt);
 
     void update_ISPC(float dt);
@@ -64,6 +70,7 @@ private:
 
     peUpdateRoutine m_routine;
     bool m_multi_threading;
+    int m_task_granularity;
 };
 
 
@@ -73,6 +80,7 @@ peContext::peContext(int n)
     , m_pressure_stiffness(500.0f)
     , m_routine(peE_ISPC)
     , m_multi_threading(true)
+    , m_task_granularity(256)
 {
     m_particles = (peParticle*)peAlignedAlloc(sizeof(peParticle)*n);
     m_soa.pos_x = (float*)peAlignedAlloc(sizeof(float)*n);
@@ -105,16 +113,27 @@ peContext::~peContext()
 }
 
 
-void peContext::setParticleSize(float v)
-{
-    m_particle_size = v;
-}
-
 void peContext::setUpdateRoutine(peUpdateRoutine v)
 {
     m_routine = v;
 }
 
+void peContext::enbaleMultiThreading(bool v)
+{
+    m_multi_threading = v;
+}
+
+void peContext::setParticleSize(float v)
+{
+    m_particle_size = v;
+}
+
+void peContext::copyDataToTexture(void *texture, int width, int height)
+{
+    if (g_CopyToTexture && texture) {
+        g_CopyToTexture->copy(texture, width, height, m_particles, sizeof(peParticle)*m_particle_count);
+    }
+}
 
 void peContext::update(float dt)
 {
@@ -130,12 +149,7 @@ void peContext::update(float dt)
 }
 
 
-void peContext::copyDataToTexture(void *texture, int width, int height)
-{
-    if (g_CopyToTexture && texture) {
-        g_CopyToTexture->copy(texture, width, height, m_particles, sizeof(peParticle)*m_particle_count);
-    }
-}
+// Plain C++ implementation
 
 void peContext::updateVelocity_Plain(float dt, int begin, int end)
 {
@@ -182,7 +196,7 @@ void peContext::updateVelocity_Plain(float dt, int begin, int end)
     }
 }
 
-void peContext::integrate_Plain(float dt, int begin, int end)
+void peContext::updatePosition_Plain(float dt, int begin, int end)
 {
     for (int i = begin; i < end; ++i) {
         float3 &pos = (float3&)m_particles[i].position;
@@ -193,12 +207,25 @@ void peContext::integrate_Plain(float dt, int begin, int end)
 
 void peContext::update_Plain(float dt)
 {
-    updateVelocity_Plain(dt, 0, m_particle_count);
-    integrate_Plain(dt, 0, m_particle_count);
+    if (m_multi_threading) {
+        parallel_for(0, m_particle_count, m_task_granularity, [&](int begin){
+            int end = std::min<int>(m_particle_count, begin + m_task_granularity);
+            updateVelocity_Plain(dt, begin, end);
+        });
+        parallel_for(0, m_particle_count, m_task_granularity, [&](int begin){
+            int end = std::min<int>(m_particle_count, begin + m_task_granularity);
+            updatePosition_Plain(dt, begin, end);
+        });
+    }
+    else {
+        updateVelocity_Plain(dt, 0, m_particle_count);
+        updatePosition_Plain(dt, 0, m_particle_count);
+    }
 }
 
 
 
+// SIMD implementation
 
 inline __m128 select(__m128 v1, __m128 v2, __m128 control)
 {
@@ -228,7 +255,6 @@ inline __m128 length(__m128 v)
     lensq = _mm_sqrt_ps(lensq);
     return lensq;
 }
-
 
 void peContext::updateVelocity_SIMD(float dt_, int begin, int end)
 {
@@ -282,7 +308,7 @@ void peContext::updateVelocity_SIMD(float dt_, int begin, int end)
     }
 }
 
-void peContext::integrate_SIMD(float dt_, int begin, int end)
+void peContext::updatePosition_SIMD(float dt_, int begin, int end)
 {
     __m128 dt = _mm_set_ps1(dt_);
     for (int i = begin; i < end; ++i) {
@@ -295,12 +321,25 @@ void peContext::integrate_SIMD(float dt_, int begin, int end)
 
 void peContext::update_SIMD(float dt)
 {
-    updateVelocity_SIMD(dt, 0, m_particle_count);
-    integrate_SIMD(dt, 0, m_particle_count);
+    if (m_multi_threading) {
+        parallel_for(0, m_particle_count, m_task_granularity, [&](int begin){
+            int end = std::min<int>(m_particle_count, begin + m_task_granularity);
+            updateVelocity_SIMD(dt, begin, end);
+        });
+        parallel_for(0, m_particle_count, m_task_granularity, [&](int begin){
+            int end = std::min<int>(m_particle_count, begin + m_task_granularity);
+            updatePosition_SIMD(dt, begin, end);
+        });
+    }
+    else {
+        updateVelocity_SIMD(dt, 0, m_particle_count);
+        updatePosition_SIMD(dt, 0, m_particle_count);
+    }
 }
 
 
 
+// SIMD SoA implementation
 
 void peSoAnize(peParticleSoA &dst, const peParticle *src, int begin, int end)
 {
@@ -474,7 +513,7 @@ void peContext::updateVelocity_SIMDSoA(float dt_, int begin, int end)
     }
 }
 
-void peContext::integrate_SIMDSoA(float dt_, int begin, int end)
+void peContext::updatePosition_SIMDSoA(float dt_, int begin, int end)
 {
     __m128 dt = _mm_set_ps1(dt_);
     for (int i = begin; i < end; i += 4) {
@@ -498,14 +537,37 @@ void peContext::integrate_SIMDSoA(float dt_, int begin, int end)
 
 void peContext::update_SIMDSoA(float dt)
 {
-    peSoAnize(m_soa, m_particles, 0, m_particle_count);
-    updateVelocity_SIMDSoA(dt, 0, m_particle_count);
-    integrate_SIMDSoA(dt, 0, m_particle_count);
-    peAoSnize(m_particles, m_soa, 0, m_particle_count);
+    if (m_multi_threading)
+    {
+        parallel_for(0, m_particle_count, m_task_granularity, [&](int begin){
+            int end = std::min<int>(m_particle_count, begin + m_task_granularity);
+            peSoAnize(m_soa, m_particles, begin, end);
+        });
+        parallel_for(0, m_particle_count, m_task_granularity, [&](int begin){
+            int end = std::min<int>(m_particle_count, begin + m_task_granularity);
+            updateVelocity_SIMDSoA(dt, begin, end);
+        });
+        parallel_for(0, m_particle_count, m_task_granularity, [&](int begin){
+            int end = std::min<int>(m_particle_count, begin + m_task_granularity);
+            updatePosition_SIMDSoA(dt, begin, end);
+        });
+        parallel_for(0, m_particle_count, m_task_granularity, [&](int begin){
+            int end = std::min<int>(m_particle_count, begin + m_task_granularity);
+            peAoSnize(m_particles, m_soa, begin, end);
+        });
+    }
+    else
+    {
+        peSoAnize(m_soa, m_particles, 0, m_particle_count);
+        updateVelocity_SIMDSoA(dt, 0, m_particle_count);
+        updatePosition_SIMDSoA(dt, 0, m_particle_count);
+        peAoSnize(m_particles, m_soa, 0, m_particle_count);
+    }
 }
 
 
 
+//  ISPC implementation
 
 void peContext::update_ISPC(float dt)
 {
@@ -522,10 +584,33 @@ void peContext::update_ISPC(float dt)
     ic.rcp_particle_size2 = 1.0f / (m_particle_size * 2.0f);
     ic.timestep = dt;
 
-    peSoAnize(m_soa, m_particles, 0, m_particle_count);
-    ispc::UpdatePressure(ic, 0, m_particle_count);
-    ispc::Integrate(ic, 0, m_particle_count);
-    peAoSnize(m_particles, m_soa, 0, m_particle_count);
+
+    if (m_multi_threading)
+    {
+        parallel_for(0, m_particle_count, m_task_granularity, [&](int begin){
+            int end = std::min<int>(m_particle_count, begin + m_task_granularity);
+            peSoAnize(m_soa, m_particles, begin, end);
+        });
+        parallel_for(0, m_particle_count, m_task_granularity, [&](int begin){
+            int end = std::min<int>(m_particle_count, begin + m_task_granularity);
+            ispc::UpdateVelocity(ic, begin, end);
+        });
+        parallel_for(0, m_particle_count, m_task_granularity, [&](int begin){
+            int end = std::min<int>(m_particle_count, begin + m_task_granularity);
+            ispc::UpdatePosition(ic, begin, end);
+        });
+        parallel_for(0, m_particle_count, m_task_granularity, [&](int begin){
+            int end = std::min<int>(m_particle_count, begin + m_task_granularity);
+            peAoSnize(m_particles, m_soa, begin, end);
+        });
+    }
+    else
+    {
+        peSoAnize(m_soa, m_particles, 0, m_particle_count);
+        ispc::UpdateVelocity(ic, 0, m_particle_count);
+        ispc::UpdatePosition(ic, 0, m_particle_count);
+        peAoSnize(m_particles, m_soa, 0, m_particle_count);
+    }
 }
 
 
@@ -541,6 +626,11 @@ peCLinkage peExport void peSetParticleSize(peContext *ctx, float v)
 peCLinkage peExport void peSetUpdateRoutine(peContext *ctx, peUpdateRoutine v)
 {
     ctx->setUpdateRoutine(v);
+}
+
+peCLinkage peExport void peEnableMultiThreading(peContext *ctx, bool v)
+{
+    ctx->enbaleMultiThreading(v);
 }
 
 peCLinkage peExport void peUpdate(peContext *ctx, float dt)

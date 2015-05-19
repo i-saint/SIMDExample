@@ -53,6 +53,7 @@ enum peUpdateRoutine
 peCLinkage peExport peContext*  peCreateContext(int n);
 peCLinkage peExport void        peDestroyContext(peContext *ctx);
 peCLinkage peExport void        peSetUpdateRoutine(peContext *ctx, peUpdateRoutine v);
+peCLinkage peExport void        peEnableMultiThreading(peContext *ctx, bool v);
 peCLinkage peExport void        peSetParticleSize(peContext *ctx, float v);
 peCLinkage peExport void        peUpdate(peContext *ctx, float dt);
 peCLinkage peExport void        peCopyDataToTexture(peContext *ctx, void *texture, int width, int height);

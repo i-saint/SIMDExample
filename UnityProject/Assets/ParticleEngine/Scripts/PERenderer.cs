@@ -8,38 +8,10 @@ using UnityEditor;
 #endif
 
 
-[AddComponentMenu("MassParticle/Renderer")]
+[RequireComponent(typeof(PEParticles))]
 public class PERenderer : BatchRendererBase
 {
-    public enum peUpdateRoutine
-    {
-        Plain,
-        SIMD,
-        SIMDSoA,
-        ISPC,
-        CSharp,
-    }
-
-    [DllImport ("ParticleEngine")] public static extern IntPtr  peCreateContext(int num);
-    [DllImport ("ParticleEngine")] public static extern void    peDestroyContext(IntPtr ctx);
-
-    [DllImport ("ParticleEngine")] public static extern void    peSetParticleSize(IntPtr ctx, float sv);
-    [DllImport ("ParticleEngine")] public static extern void    peSetPressureStiffness(IntPtr ctx, float v);
-    [DllImport ("ParticleEngine")] public static extern void    peSetWallStiffness(IntPtr ctx, float v);
-    [DllImport ("ParticleEngine")] public static extern void    peSetUpdateRoutine(IntPtr ctx, peUpdateRoutine r);
-    [DllImport ("ParticleEngine")] public static extern void    peUpdate(IntPtr ctx, float dt);
-    [DllImport ("ParticleEngine")] public static extern void    peCopyDataToTexture(IntPtr ctx, IntPtr texture, int width, int height);
-
-
-    public const int DataTextureWidth = 128;
-
-    public peUpdateRoutine m_routine = peUpdateRoutine.ISPC;
-    public int m_particle_count = 1024*4;
-    public float m_particle_size = 0.1f;
-    public float m_pressure_stiffness = 500.0f;
-    public float m_wall_stiffness = 1500.0f;
-
-    IntPtr m_ctx;
+    PEParticles m_particles;
     RenderTexture m_data_texture;
 
 
@@ -91,7 +63,7 @@ public class PERenderer : BatchRendererBase
     {
         ReleaseGPUResources();
 
-        m_data_texture = new RenderTexture(DataTextureWidth * 2, 128, 0, RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Default);
+        m_data_texture = new RenderTexture(PEParticles.DataTextureWidth * 2, 128, 0, RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Default);
         m_data_texture.filterMode = FilterMode.Point;
         m_data_texture.Create();
 
@@ -100,7 +72,7 @@ public class PERenderer : BatchRendererBase
 
     public override void UpdateGPUResources()
     {
-        peCopyDataToTexture(m_ctx, m_data_texture.GetNativeTexturePtr(), m_data_texture.width, m_data_texture.height);
+        m_particles.CopyDataToTexture(m_data_texture);
 
         ForEachEveryMaterials((v) =>
         {
@@ -112,9 +84,8 @@ public class PERenderer : BatchRendererBase
 
     public override void OnEnable()
     {
-        m_particle_count = Mathf.Max(DataTextureWidth, m_particle_count);
-        m_ctx = peCreateContext(m_particle_count);
-        m_max_instances = m_particle_count;
+        m_particles = GetComponent<PEParticles>();
+        m_max_instances = 8192;
 
         base.OnEnable();
         ResetGPUResoures();
@@ -124,20 +95,11 @@ public class PERenderer : BatchRendererBase
     {
         base.OnDisable();
         ReleaseGPUResources();
-
-        peDestroyContext(m_ctx);
-        m_ctx = IntPtr.Zero;
-    }
-
-    void Update()
-    {
-        peSetUpdateRoutine(m_ctx, m_routine);
-        peUpdate(m_ctx, Time.deltaTime);
-        m_instance_count = m_particle_count;
     }
 
     public override void LateUpdate()
     {
+        m_instance_count = m_particles.m_particle_count;
         base.LateUpdate();
     }
 

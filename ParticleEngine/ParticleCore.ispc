@@ -19,7 +19,7 @@ struct Context
 };
 
 
-export void UpdatePressure(uniform Context &ctx, uniform int begin, uniform int end)
+export void UpdateVelocity(uniform Context &ctx, uniform int begin, uniform int end)
 {
     // パーティクル同士の押し返し
     for(uniform int i=begin; i<end; ++i) {
@@ -73,7 +73,7 @@ export void UpdatePressure(uniform Context &ctx, uniform int begin, uniform int 
     }
 }
 
-export void Integrate(uniform Context &ctx, uniform int begin, uniform int end)
+export void UpdatePosition(uniform Context &ctx, uniform int begin, uniform int end)
 {
     for(uniform int i=begin; i<end; i+=programCount) {
         int is = i + programIndex;

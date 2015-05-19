@@ -6,10 +6,11 @@
 const int ParticleCount = 1024 * 4;
 const int LoopCount = 16;
 
-void Test(peUpdateRoutine r, const char *name)
+void Test(peUpdateRoutine r, bool mt, const char *name)
 {
     float average = 0.0f;
     peContext *ctx = peCreateContext(ParticleCount);
+    peEnableMultiThreading(ctx, mt);
     peSetUpdateRoutine(ctx, r);
     for (int i = 0; i < LoopCount; ++i) {
         clock_t t = clock();
@@ -23,8 +24,13 @@ void Test(peUpdateRoutine r, const char *name)
 
 int main(int argc, char *argv[])
 {
-    Test(peE_Plain,     "Test_Plain"    );
-    Test(peE_SIMD,      "Test_SIMD"     );
-    Test(peE_SIMDSoA,   "Test_SIMDSoA"  );
-    Test(peE_ISPC,      "Test_ISPC"     );
+    Test(peE_Plain,   false, "Test_Plain (ST)  " );
+    Test(peE_SIMD,    false, "Test_SIMD (ST)   " );
+    Test(peE_SIMDSoA, false, "Test_SIMDSoA (ST)" );
+    Test(peE_ISPC,    false, "Test_ISPC (ST)   " );
+
+    Test(peE_Plain,    true, "Test_Plain (MT)  " );
+    Test(peE_SIMD,     true, "Test_SIMD (MT)   " );
+    Test(peE_SIMDSoA,  true, "Test_SIMDSoA (MT)" );
+    Test(peE_ISPC,     true, "Test_ISPC (MT)   " );
 }

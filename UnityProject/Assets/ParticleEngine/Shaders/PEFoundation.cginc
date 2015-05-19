@@ -4,6 +4,7 @@
 #include "../../BatchRenderer/Shaders/Math.cginc"
 
 int         g_batch_begin;
+int         g_num_instances;
 sampler2D   g_instance_data;
 float       g_size;
 float       g_fade_time;
@@ -36,6 +37,9 @@ void ParticleTransform(inout appdata_full v, out float4 pos, out float4 vel)
 
     v.vertex.xyz *= g_size;
     v.vertex.xyz += pos.xyz;
+    if(iid >= g_num_instances) {
+        v.vertex.xyz = 0.0;
+    }
 }
 
 
