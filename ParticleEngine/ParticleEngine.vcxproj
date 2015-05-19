@@ -121,6 +121,7 @@ $(SolutionDir)PatchLibrary\PatchLibraryProxy64.exe /target:Unity.exe /patch:$(Ta
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="CopyToTexture.cpp" />
     <ClCompile Include="CopyToTextureD3D11.cpp" />
     <ClCompile Include="ParticleEngine.cpp" />
   </ItemGroup>

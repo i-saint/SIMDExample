@@ -3,6 +3,7 @@
   <ItemGroup>
     <ClCompile Include="ParticleEngine.cpp" />
     <ClCompile Include="CopyToTextureD3D11.cpp" />
+    <ClCompile Include="CopyToTexture.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ParticleEngine.h" />

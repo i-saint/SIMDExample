@@ -15,6 +15,7 @@ struct Context
    float particle_size;
    float rcp_particle_size2;
    float pressure_stiffness;
+   float wall_stiffness;
    float timestep;
 };
 
@@ -50,7 +51,7 @@ export void UpdateVelocity(uniform Context &ctx, uniform int begin, uniform int 
         float3 pos = {ctx.pos_x[is], ctx.pos_y[is], ctx.pos_z[is] };
 
         float d = dot(pos, floor_normal) + floor_distance;
-        float3 accel = floor_normal * (-min(0.0f, d) * ctx.pressure_stiffness);
+        float3 accel = floor_normal * (-min(0.0f, d) * ctx.wall_stiffness);
 
         float3 vel = {ctx.vel_x[is], ctx.vel_y[is], ctx.vel_z[is] };
         vel = vel + accel * ctx.timestep;

@@ -51,30 +51,29 @@ inline float length(float3 v)
 
 
 
-typedef __m128 simdfloat4;
 
 struct soa43
 {
     union {
-        simdfloat4 v[3];
-        struct { simdfloat4 x, y, z; };
+        __m128 v[3];
+        struct { __m128 x, y, z; };
     };
 };
 
 struct soa44
 {
     union {
-        simdfloat4 v[4];
-        struct { simdfloat4 x, y, z, w; };
+        __m128 v[4];
+        struct { __m128 x, y, z, w; };
     };
 };
 
-inline soa43 soa_transpose34(const simdfloat4 &v0, const simdfloat4 &v1, const simdfloat4 &v2, const simdfloat4 &v3)
+inline soa43 soa_transpose34(const __m128 &v0, const __m128 &v1, const __m128 &v2, const __m128 &v3)
 {
-    simdfloat4 r1 = _mm_unpacklo_ps(v0, v1);
-    simdfloat4 r2 = _mm_unpacklo_ps(v2, v3);
-    simdfloat4 r3 = _mm_unpackhi_ps(v0, v1);
-    simdfloat4 r4 = _mm_unpackhi_ps(v2, v3);
+    __m128 r1 = _mm_unpacklo_ps(v0, v1);
+    __m128 r2 = _mm_unpacklo_ps(v2, v3);
+    __m128 r3 = _mm_unpackhi_ps(v0, v1);
+    __m128 r4 = _mm_unpackhi_ps(v2, v3);
     soa43 ret = {
         _mm_shuffle_ps(r1, r2, SSE_SHUFFLE(0, 1, 0, 1)),
         _mm_shuffle_ps(r1, r2, SSE_SHUFFLE(2, 3, 2, 3)),
@@ -82,13 +81,13 @@ inline soa43 soa_transpose34(const simdfloat4 &v0, const simdfloat4 &v1, const s
     return ret;
 }
 
-inline soa44 soa_transpose44(const simdfloat4 &v0, const simdfloat4 &v1, const simdfloat4 &v2)
+inline soa44 soa_transpose44(const __m128 &v0, const __m128 &v1, const __m128 &v2)
 {
-    simdfloat4 zero = _mm_set_ps1(0.0f);
-    simdfloat4 r1 = _mm_unpacklo_ps(v0, v1);
-    simdfloat4 r2 = _mm_unpacklo_ps(v2, zero);
-    simdfloat4 r3 = _mm_unpackhi_ps(v0, v1);
-    simdfloat4 r4 = _mm_unpackhi_ps(v2, zero);
+    __m128 zero = _mm_set_ps1(0.0f);
+    __m128 r1 = _mm_unpacklo_ps(v0, v1);
+    __m128 r2 = _mm_unpacklo_ps(v2, zero);
+    __m128 r3 = _mm_unpackhi_ps(v0, v1);
+    __m128 r4 = _mm_unpackhi_ps(v2, zero);
     soa44 ret = {
         _mm_shuffle_ps(r1, r2, SSE_SHUFFLE(0, 1, 0, 1)),
         _mm_shuffle_ps(r1, r2, SSE_SHUFFLE(2, 3, 2, 3)),

@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <random>
 #include <ppl.h>
+#include <windows.h>
 #include "ParticleEngine.h"
 #include "ParticleCore_ispc.h"
 
@@ -41,6 +42,8 @@ public:
     void setUpdateRoutine(peUpdateRoutine v);
     void enbaleMultiThreading(bool v);
     void setParticleSize(float v);
+    void setPressureStiffness(float v);
+    void setWallStiffness(float v);
 
     void update(float dt);
     void copyDataToTexture(void *texture, int width, int height);
@@ -67,6 +70,7 @@ private:
 
     float m_particle_size;
     float m_pressure_stiffness;
+    float m_wall_stiffness;
 
     peUpdateRoutine m_routine;
     bool m_multi_threading;
@@ -78,6 +82,7 @@ peContext::peContext(int n)
     : m_particle_count(n)
     , m_particle_size(0.2f)
     , m_pressure_stiffness(500.0f)
+    , m_wall_stiffness(1500.0f)
     , m_routine(peE_ISPC)
     , m_multi_threading(true)
     , m_task_granularity(256)
@@ -128,12 +133,24 @@ void peContext::setParticleSize(float v)
     m_particle_size = v;
 }
 
+void peContext::setPressureStiffness(float v)
+{
+    m_pressure_stiffness = v;
+}
+
+void peContext::setWallStiffness(float v)
+{
+    m_wall_stiffness = v;
+}
+
 void peContext::copyDataToTexture(void *texture, int width, int height)
 {
     if (g_CopyToTexture && texture) {
         g_CopyToTexture->copy(texture, width, height, m_particles, sizeof(peParticle)*m_particle_count);
     }
 }
+
+
 
 void peContext::update(float dt)
 {
@@ -147,6 +164,7 @@ void peContext::update(float dt)
     default: break;
     }
 }
+
 
 
 // Plain C++ implementation
@@ -181,7 +199,7 @@ void peContext::updateVelocity_Plain(float dt, int begin, int end)
     for (int i = begin; i < end; ++i) {
         float3 &pos = (float3&)m_particles[i].position;
         float d = dot(pos, floor_normal) + floor_distance;
-        float3 accel = floor_normal * (-std::min<float>(0.0f, d) * m_pressure_stiffness);
+        float3 accel = floor_normal * (-std::min<float>(0.0f, d) * m_wall_stiffness);
         float3 &vel = (float3&)m_particles[i].velocity;
         vel = vel + accel * dt;
     }
@@ -261,6 +279,7 @@ void peContext::updateVelocity_SIMD(float dt_, int begin, int end)
     __m128 particle_size2 = _mm_set_ps1(m_particle_size*2.0f);
     __m128 rcp_particle_size2 = _mm_set_ps1(1.0f / (m_particle_size*2.0f));
     __m128 pressure_stiffness = _mm_set_ps1(m_pressure_stiffness);
+    __m128 wall_stiffness = _mm_set_ps1(m_wall_stiffness);
     __m128 dt = _mm_set_ps1(dt_);
     __m128 zero = _mm_setzero_ps();
     __m128 negone = _mm_set_ps1(-1.0f);
@@ -292,7 +311,7 @@ void peContext::updateVelocity_SIMD(float dt_, int begin, int end)
         __m128 d = _mm_add_ps(dot(pos, floor_normal), floor_distance);
 
         __m128 vel = _mm_load_ps(m_particles[i].velocity.v);
-        __m128 accel = _mm_mul_ps(floor_normal, _mm_mul_ps(_mm_mul_ps(_mm_min_ps(zero, d), negone), pressure_stiffness));
+        __m128 accel = _mm_mul_ps(floor_normal, _mm_mul_ps(_mm_mul_ps(_mm_min_ps(zero, d), negone), wall_stiffness));
         vel = _mm_add_ps(vel, _mm_mul_ps(accel, dt));
         _mm_store_ps(m_particles[i].velocity.v, vel);
     }
@@ -346,22 +365,22 @@ void peSoAnize(peParticleSoA &dst, const peParticle *src, int begin, int end)
     for (size_t i = begin; i < end; i += 4)
     {
         soa43 tpos = soa_transpose34(
-            (simdfloat4&)src[i + 0].position,
-            (simdfloat4&)src[i + 1].position,
-            (simdfloat4&)src[i + 2].position,
-            (simdfloat4&)src[i + 3].position);
-        ((simdfloat4&)dst.pos_x[i]) = tpos.x;
-        ((simdfloat4&)dst.pos_y[i]) = tpos.y;
-        ((simdfloat4&)dst.pos_z[i]) = tpos.z;
+            (__m128&)src[i + 0].position,
+            (__m128&)src[i + 1].position,
+            (__m128&)src[i + 2].position,
+            (__m128&)src[i + 3].position);
+        ((__m128&)dst.pos_x[i]) = tpos.x;
+        ((__m128&)dst.pos_y[i]) = tpos.y;
+        ((__m128&)dst.pos_z[i]) = tpos.z;
 
         soa43 tvel = soa_transpose34(
-            (simdfloat4&)src[i + 0].velocity,
-            (simdfloat4&)src[i + 1].velocity,
-            (simdfloat4&)src[i + 2].velocity,
-            (simdfloat4&)src[i + 3].velocity);
-        ((simdfloat4&)dst.vel_x[i]) = tvel.x;
-        ((simdfloat4&)dst.vel_y[i]) = tvel.y;
-        ((simdfloat4&)dst.vel_z[i]) = tvel.z;
+            (__m128&)src[i + 0].velocity,
+            (__m128&)src[i + 1].velocity,
+            (__m128&)src[i + 2].velocity,
+            (__m128&)src[i + 3].velocity);
+        ((__m128&)dst.vel_x[i]) = tvel.x;
+        ((__m128&)dst.vel_y[i]) = tvel.y;
+        ((__m128&)dst.vel_z[i]) = tvel.z;
     }
 }
 
@@ -370,18 +389,18 @@ void peAoSnize(peParticle *dst, const peParticleSoA &src, int begin, int end)
     for (size_t i = begin; i < end; i += 4)
     {
         soa44 tpos = soa_transpose44(
-            ((simdfloat4&)src.pos_x[i]),
-            ((simdfloat4&)src.pos_y[i]),
-            ((simdfloat4&)src.pos_z[i]));
+            ((__m128&)src.pos_x[i]),
+            ((__m128&)src.pos_y[i]),
+            ((__m128&)src.pos_z[i]));
         dst[i + 0].position = (float4&)tpos.v[0];
         dst[i + 1].position = (float4&)tpos.v[1];
         dst[i + 2].position = (float4&)tpos.v[2];
         dst[i + 3].position = (float4&)tpos.v[3];
 
         soa44 tvel = soa_transpose44(
-            ((simdfloat4&)src.vel_x[i]),
-            ((simdfloat4&)src.vel_y[i]),
-            ((simdfloat4&)src.vel_z[i]));
+            ((__m128&)src.vel_x[i]),
+            ((__m128&)src.vel_y[i]),
+            ((__m128&)src.vel_z[i]));
         dst[i + 0].velocity = (float4&)tvel.v[0];
         dst[i + 1].velocity = (float4&)tvel.v[1];
         dst[i + 2].velocity = (float4&)tvel.v[2];
@@ -418,6 +437,7 @@ void peContext::updateVelocity_SIMDSoA(float dt_, int begin, int end)
     __m128 particle_size2 = _mm_set_ps1(m_particle_size*2.0f);
     __m128 rcp_particle_size2 = _mm_set_ps1(1.0f / (m_particle_size*2.0f));
     __m128 pressure_stiffness = _mm_set_ps1(m_pressure_stiffness);
+    __m128 wall_stiffness = _mm_set_ps1(m_wall_stiffness);
     __m128 dt = _mm_set_ps1(dt_);
     __m128 zero = _mm_setzero_ps();
     __m128 negone = _mm_set_ps1(-1.0f);
@@ -477,7 +497,7 @@ void peContext::updateVelocity_SIMDSoA(float dt_, int begin, int end)
         __m128 posy = _mm_load_ps(&m_soa.pos_y[i]);
         __m128 posz = _mm_load_ps(&m_soa.pos_z[i]);
         __m128 d = _mm_add_ps(soa_dot(posx, posy, posz, floor_normal_x, floor_normal_y, floor_normal_z), floor_distance);
-        __m128 a = _mm_mul_ps(_mm_mul_ps(_mm_min_ps(zero, d), negone), pressure_stiffness);
+        __m128 a = _mm_mul_ps(_mm_mul_ps(_mm_min_ps(zero, d), negone), wall_stiffness);
 
         __m128 velx = _mm_load_ps(&m_soa.vel_x[i]);
         __m128 vely = _mm_load_ps(&m_soa.vel_y[i]);
@@ -580,6 +600,7 @@ void peContext::update_ISPC(float dt)
     ic.vel_z = m_soa.vel_z;
     ic.particle_count = m_particle_count;
     ic.pressure_stiffness = m_pressure_stiffness;
+    ic.wall_stiffness = m_wall_stiffness;
     ic.particle_size = m_particle_size;
     ic.rcp_particle_size2 = 1.0f / (m_particle_size * 2.0f);
     ic.timestep = dt;
@@ -615,13 +636,10 @@ void peContext::update_ISPC(float dt)
 
 
 
+
+
 peCLinkage peExport peContext* peCreateContext(int n) { return new peContext(n); }
 peCLinkage peExport void peDestroyContext(peContext *ctx) { delete ctx; }
-
-peCLinkage peExport void peSetParticleSize(peContext *ctx, float v)
-{
-    ctx->setParticleSize(v);
-}
 
 peCLinkage peExport void peSetUpdateRoutine(peContext *ctx, peUpdateRoutine v)
 {
@@ -631,6 +649,21 @@ peCLinkage peExport void peSetUpdateRoutine(peContext *ctx, peUpdateRoutine v)
 peCLinkage peExport void peEnableMultiThreading(peContext *ctx, bool v)
 {
     ctx->enbaleMultiThreading(v);
+}
+
+peCLinkage peExport void peSetParticleSize(peContext *ctx, float v)
+{
+    ctx->setParticleSize(v);
+}
+
+peCLinkage peExport void peSetPressureStiffness(peContext *ctx, float v)
+{
+    ctx->setPressureStiffness(v);
+}
+
+peCLinkage peExport void peSetWallStiffness(peContext *ctx, float v)
+{
+    ctx->setPressureStiffness(v);
 }
 
 peCLinkage peExport void peUpdate(peContext *ctx, float dt)
@@ -643,72 +676,4 @@ peCLinkage peExport void peCopyDataToTexture(peContext *ctx, void *texture, int 
     if (ctx) {
         ctx->copyDataToTexture(texture, width, height);
     }
-}
-
-
-
-
-
-// Graphics device identifiers in Unity
-enum GfxDeviceRenderer
-{
-    kGfxRendererOpenGL = 0,          // OpenGL
-    kGfxRendererD3D9,                // Direct3D 9
-    kGfxRendererD3D11,               // Direct3D 11
-    kGfxRendererGCM,                 // Sony PlayStation 3 GCM
-    kGfxRendererNull,                // "null" device (used in batch mode)
-    kGfxRendererHollywood,           // Nintendo Wii
-    kGfxRendererXenon,               // Xbox 360
-    kGfxRendererOpenGLES,            // OpenGL ES 1.1
-    kGfxRendererOpenGLES20Mobile,    // OpenGL ES 2.0 mobile variant
-    kGfxRendererMolehill,            // Flash 11 Stage3D
-    kGfxRendererOpenGLES20Desktop,   // OpenGL ES 2.0 desktop variant (i.e. NaCl)
-    kGfxRendererCount
-};
-
-// Event types for UnitySetGraphicsDevice
-enum GfxDeviceEventType {
-    kGfxDeviceEventInitialize = 0,
-    kGfxDeviceEventShutdown,
-    kGfxDeviceEventBeforeReset,
-    kGfxDeviceEventAfterReset,
-};
-
-peCopyToTextureBase* peCreateCopyToTextureD3D9(void *device);
-peCopyToTextureBase* peCreateCopyToTextureD3D11(void *device);
-peCopyToTextureBase* peCreateCopyToTextureOpenGL(void *device);
-
-#define peSupportD3D11
-
-peCLinkage peExport void UnitySetGraphicsDevice(void* device, int deviceType, int eventType)
-{
-    if (eventType == kGfxDeviceEventInitialize) {
-#ifdef peSupportD3D9
-        if (deviceType == kGfxRendererD3D9)
-        {
-            // todo
-        }
-#endif // peSupportD3D9
-#ifdef peSupportD3D11
-        if (deviceType == kGfxRendererD3D11)
-        {
-            g_CopyToTexture = peCreateCopyToTextureD3D11(device);
-        }
-#endif // peSupportD3D11
-#ifdef peSupportOpenGL
-        if (deviceType == kGfxRendererOpenGL)
-        {
-            g_CopyToTexture = peCreateCopyToTextureOpenGL(device);
-        }
-#endif // peSupportOpenGL
-    }
-
-    if (eventType == kGfxDeviceEventShutdown) {
-        delete g_CopyToTexture;
-        g_CopyToTexture = nullptr;
-    }
-}
-
-peCLinkage peExport void UnityRenderEvent(int eventID)
-{
 }

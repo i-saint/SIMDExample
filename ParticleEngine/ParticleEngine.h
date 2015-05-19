@@ -39,7 +39,7 @@ public:
 };
 peCopyToTextureBase* peCreateCopyToTextureD3D11(void *device);
 
-typedef void(__stdcall peCS)(float v, int begin, int end);
+typedef void(__stdcall peCS)(float dt, int begin, int end);
 
 enum peUpdateRoutine
 {
@@ -52,8 +52,12 @@ enum peUpdateRoutine
 
 peCLinkage peExport peContext*  peCreateContext(int n);
 peCLinkage peExport void        peDestroyContext(peContext *ctx);
+
 peCLinkage peExport void        peSetUpdateRoutine(peContext *ctx, peUpdateRoutine v);
 peCLinkage peExport void        peEnableMultiThreading(peContext *ctx, bool v);
 peCLinkage peExport void        peSetParticleSize(peContext *ctx, float v);
+peCLinkage peExport void        peSetPressureStiffness(peContext *ctx, float v);
+peCLinkage peExport void        peSetWallStiffness(peContext *ctx, float v);
+
 peCLinkage peExport void        peUpdate(peContext *ctx, float dt);
 peCLinkage peExport void        peCopyDataToTexture(peContext *ctx, void *texture, int width, int height);
