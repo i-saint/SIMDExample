@@ -1,4 +1,6 @@
 ﻿#include <cstdlib>
+#include <cstdio>
+#include <ctime>
 #include <algorithm>
 #include <random>
 #include <ppl.h>
@@ -39,14 +41,19 @@ public:
     peContext(int n);
     ~peContext();
 
+    void resetParticles();
     void setUpdateRoutine(peUpdateRoutine v);
     void enbaleMultiThreading(bool v);
     void setParticleSize(float v);
     void setPressureStiffness(float v);
     void setWallStiffness(float v);
+    void setCSUpdateRoutine(CSUpdateRoutine vel, CSUpdateRoutine pos);
 
     void update(float dt);
     void copyDataToTexture(void *texture, int width, int height);
+    peParticle* getParticles();
+
+    const char* benchmark(int loop_count);
 
 private:
     void updateVelocity_Plain(float dt, int begin ,int end);
@@ -63,6 +70,8 @@ private:
 
     void update_ISPC(float dt);
 
+    void update_CSharp(float dt);
+
 private:
     peParticle *m_particles;
     peParticleSoA m_soa;
@@ -75,6 +84,10 @@ private:
     peUpdateRoutine m_routine;
     bool m_multi_threading;
     int m_task_granularity;
+
+    CSUpdateRoutine m_cs_update_vel;
+    CSUpdateRoutine m_cs_update_pos;
+    std::string m_benchmark_result;
 };
 
 
@@ -86,6 +99,8 @@ peContext::peContext(int n)
     , m_routine(peE_ISPC)
     , m_multi_threading(true)
     , m_task_granularity(256)
+    , m_cs_update_vel(nullptr)
+    , m_cs_update_pos(nullptr)
 {
     m_particles = (peParticle*)peAlignedAlloc(sizeof(peParticle)*n);
     m_soa.pos_x = (float*)peAlignedAlloc(sizeof(float)*n);
@@ -94,16 +109,7 @@ peContext::peContext(int n)
     m_soa.vel_x = (float*)peAlignedAlloc(sizeof(float)*n);
     m_soa.vel_y = (float*)peAlignedAlloc(sizeof(float)*n);
     m_soa.vel_z = (float*)peAlignedAlloc(sizeof(float)*n);
-
-    // set random position
-    std::mt19937 rand;
-    std::uniform_real_distribution<float> dist(-5.0f, 5.0f);
-    const float4 zero4 = {0.0f};
-    for (int i = 0; i < n; ++i) {
-        float4 pos = { dist(rand), dist(rand) + 5.0f, dist(rand), 0.0f };
-        m_particles[i].position = pos;
-        m_particles[i].velocity = zero4;
-    }
+    resetParticles();
 }
 
 peContext::~peContext()
@@ -117,6 +123,19 @@ peContext::~peContext()
     peAlignedFree(m_soa.vel_z);
 }
 
+
+void peContext::resetParticles()
+{
+    // set random position
+    std::mt19937 rand;
+    std::uniform_real_distribution<float> dist(-5.0f, 5.0f);
+    const float4 zero4 = {0.0f};
+    for (int i = 0; i < m_particle_count; ++i) {
+        float4 pos = { dist(rand), dist(rand) + 5.0f, dist(rand), 0.0f };
+        m_particles[i].position = pos;
+        m_particles[i].velocity = zero4;
+    }
+}
 
 void peContext::setUpdateRoutine(peUpdateRoutine v)
 {
@@ -143,11 +162,22 @@ void peContext::setWallStiffness(float v)
     m_wall_stiffness = v;
 }
 
+void peContext::setCSUpdateRoutine(CSUpdateRoutine vel, CSUpdateRoutine pos)
+{
+    m_cs_update_vel = vel;
+    m_cs_update_pos = pos;
+}
+
 void peContext::copyDataToTexture(void *texture, int width, int height)
 {
     if (g_CopyToTexture && texture) {
         g_CopyToTexture->copy(texture, width, height, m_particles, sizeof(peParticle)*m_particle_count);
     }
+}
+
+peParticle* peContext::getParticles()
+{
+    return m_particles;
 }
 
 
@@ -160,7 +190,7 @@ void peContext::update(float dt)
     case peE_SIMD:      update_SIMD(dt);    break;
     case peE_SIMDSoA:   update_SIMDSoA(dt); break;
     case peE_ISPC:      update_ISPC(dt);    break;
-    case peE_CSharp: break;
+    case peE_CSharp:    update_CSharp(dt);  break;
     default: break;
     }
 }
@@ -635,6 +665,28 @@ void peContext::update_ISPC(float dt)
 }
 
 
+void peContext::update_CSharp(float dt)
+{
+    if (m_cs_update_vel == nullptr || m_cs_update_pos == nullptr) { return; }
+
+    if (m_multi_threading)
+    {
+        parallel_for(0, m_particle_count, m_task_granularity, [&](int begin){
+            int end = std::min<int>(m_particle_count, begin + m_task_granularity);
+            m_cs_update_vel(dt, begin, end);
+        });
+        parallel_for(0, m_particle_count, m_task_granularity, [&](int begin){
+            int end = std::min<int>(m_particle_count, begin + m_task_granularity);
+            m_cs_update_pos(dt, begin, end);
+        });
+    }
+    else
+    {
+        m_cs_update_vel(dt, 0, m_particle_count);
+        m_cs_update_pos(dt, 0, m_particle_count);
+    }
+}
+
 
 
 
@@ -666,6 +718,11 @@ peCLinkage peExport void peSetWallStiffness(peContext *ctx, float v)
     ctx->setPressureStiffness(v);
 }
 
+peCLinkage peExport void peSetCSUpdateRoutine(peContext *ctx, CSUpdateRoutine vel, CSUpdateRoutine pos)
+{
+    ctx->setCSUpdateRoutine(vel, pos);
+}
+
 peCLinkage peExport void peUpdate(peContext *ctx, float dt)
 {
     ctx->update(dt);
@@ -676,4 +733,57 @@ peCLinkage peExport void peCopyDataToTexture(peContext *ctx, void *texture, int 
     if (ctx) {
         ctx->copyDataToTexture(texture, width, height);
     }
+}
+
+peCLinkage peExport peParticle* peGetParticles(peContext *ctx)
+{
+    return ctx->getParticles();
+}
+
+peCLinkage peExport void peResetParticles(peContext *ctx)
+{
+    ctx->resetParticles();
+}
+
+
+std::string Benchmark(peContext *ctx, peUpdateRoutine r, bool mt, int loop_count, const char *name)
+{
+    float average = 0.0f;
+    peResetParticles(ctx);
+    peEnableMultiThreading(ctx, mt);
+    peSetUpdateRoutine(ctx, r);
+    for (int i = 0; i < loop_count; ++i) {
+        clock_t t = clock();
+        peUpdate(ctx, 1.0f / 60.0f);
+        average += float(clock() - t) / CLOCKS_PER_SEC * 1000.0f;
+    }
+    average /= loop_count;
+
+    char buf[512];
+    sprintf(buf, "%s: average %.2fms\n", name, average);
+    return buf;
+}
+
+const char* peContext::benchmark(int loop_count)
+{
+    std::string r;
+    r += Benchmark(this, peE_Plain,   false, loop_count, "Plain C++ (ST) ");
+    r += Benchmark(this, peE_SIMD,    false, loop_count, "SIMD (ST)      ");
+    r += Benchmark(this, peE_SIMDSoA, false, loop_count, "SIMD SoA (ST)  ");
+    r += Benchmark(this, peE_ISPC,    false, loop_count, "ISPC (ST)      ");
+    r += Benchmark(this, peE_CSharp,  false, loop_count, "Plain C# (ST)  ");
+
+    r += Benchmark(this, peE_Plain,   true, loop_count, "Plain C++ (MT) ");
+    r += Benchmark(this, peE_SIMD,    true, loop_count, "SIMD (MT)      ");
+    r += Benchmark(this, peE_SIMDSoA, true, loop_count, "SIMD SoA (MT)  ");
+    r += Benchmark(this, peE_ISPC,    true, loop_count, "ISPC (MT)      ");
+    r += Benchmark(this, peE_CSharp,  true, loop_count, "Plain C# (MT)  ");
+
+    m_benchmark_result = r;
+    return m_benchmark_result.c_str();
+}
+
+peCLinkage peExport const char* peBenchmark(peContext *ctx, int loop_count)
+{
+    return ctx->benchmark(loop_count);
 }
