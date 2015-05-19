@@ -98,7 +98,13 @@
     </Link>
     <ClCompile>
       <AdditionalIncludeDirectories>$(TargetDir)</AdditionalIncludeDirectories>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <Optimization>Disabled</Optimization>
     </ClCompile>
+    <PostBuildEvent>
+      <Command>xcopy /Yq $(TargetPath) $(SolutionDir)..\UnityProject\Assets\ParticleEngine\Plugins\x86_64
+$(SolutionDir)PatchLibrary\PatchLibraryProxy64.exe /target:Unity.exe /patch:$(TargetPath)</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Link>
@@ -106,7 +112,13 @@
     </Link>
     <ClCompile>
       <AdditionalIncludeDirectories>$(TargetDir)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/Zo %(AdditionalOptions)</AdditionalOptions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
+    <PostBuildEvent>
+      <Command>xcopy /Yq $(TargetPath) $(SolutionDir)..\UnityProject\Assets\ParticleEngine\Plugins\x86_64
+$(SolutionDir)PatchLibrary\PatchLibraryProxy64.exe /target:Unity.exe /patch:$(TargetPath)</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="CopyToTextureD3D11.cpp" />

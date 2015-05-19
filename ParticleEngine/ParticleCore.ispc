@@ -44,14 +44,16 @@ export void UpdatePressure(uniform Context &ctx, uniform int begin, uniform int 
 
     // 床との衝突
     uniform float3 floor_normal = {0.0f, 1.0f, 0.0f};
-    uniform float floor_distance = 0.0f;
+    uniform float floor_distance = -ctx.particle_size;
     for (uniform int i=begin; i<end; i+=programCount) {
         int is = i + programIndex;
         float3 pos = {ctx.pos_x[is], ctx.pos_y[is], ctx.pos_z[is] };
-        float3 vel = {ctx.vel_x[is], ctx.vel_y[is], ctx.vel_z[is] };
 
         float d = dot(pos, floor_normal) + floor_distance;
-        vel = vel + (floor_normal * min(0.0f, -d * ctx.pressure_stiffness) * ctx.timestep);
+        float3 accel = floor_normal * (-min(0.0f, d) * ctx.pressure_stiffness);
+
+        float3 vel = {ctx.vel_x[is], ctx.vel_y[is], ctx.vel_z[is] };
+        vel = vel + accel * ctx.timestep;
         ctx.vel_x[is] = vel.x;
         ctx.vel_y[is] = vel.y;
         ctx.vel_z[is] = vel.z;
@@ -62,8 +64,9 @@ export void UpdatePressure(uniform Context &ctx, uniform int begin, uniform int 
     uniform float gravity_strength = 5.0f;
     for (uniform int i=begin; i<end; i+=programCount) {
         int is = i + programIndex;
+        float3 accel = gravity_direction * gravity_strength;
         float3 vel = {ctx.vel_x[is], ctx.vel_y[is], ctx.vel_z[is] };
-        vel = vel + (gravity_direction * gravity_strength * ctx.timestep);
+        vel = vel + accel * ctx.timestep;
         ctx.vel_x[is] = vel.x;
         ctx.vel_y[is] = vel.y;
         ctx.vel_z[is] = vel.z;

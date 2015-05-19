@@ -69,8 +69,8 @@ private:
 
 peContext::peContext(int n)
     : m_particle_count(n)
-    , m_particle_size(0.1f)
-    , m_pressure_stiffness(1000.0f)
+    , m_particle_size(0.2f)
+    , m_pressure_stiffness(500.0f)
     , m_routine(peE_ISPC)
     , m_multi_threading(true)
 {
@@ -132,14 +132,15 @@ void peContext::update(float dt)
 
 void peContext::copyDataToTexture(void *texture, int width, int height)
 {
-    if (g_CopyToTexture) {
+    if (g_CopyToTexture && texture) {
         g_CopyToTexture->copy(texture, width, height, m_particles, sizeof(peParticle)*m_particle_count);
     }
 }
 
 void peContext::updateVelocity_Plain(float dt, int begin, int end)
 {
-    const float rcp_particle_size2 = 1.0f / (m_particle_size*2.0f);
+    const float particle_size2 = m_particle_size * 2.0f;
+    const float rcp_particle_size2 = 1.0f / (m_particle_size * 2.0f);
 
     // パーティクル同士の押し返し
     for (int i = begin; i < end; ++i) {
@@ -150,8 +151,10 @@ void peContext::updateVelocity_Plain(float dt, int begin, int end)
             float3 diff = pos2 - pos1;
             float3 dir = diff * rcp_particle_size2;
             float dist = length(diff);
-            float3 a = dir * (std::min<float>(0.0f, dist - (m_particle_size*2.0f)) * m_pressure_stiffness);
-            accel = accel + (a * (dist > 0.0f, 1.0f, 0.0f));
+            if (dist > 0.0f) {
+                float3 a = dir * (std::min<float>(0.0f, dist - particle_size2) * m_pressure_stiffness);
+                accel = accel + a;
+            }
         }
 
         float3 &vel = (float3&)m_particles[i].velocity;
@@ -160,21 +163,22 @@ void peContext::updateVelocity_Plain(float dt, int begin, int end)
 
     // 床との衝突
     const float3 floor_normal = { 0.0f, 1.0f, 0.0f };
-    const float floor_distance = 0.0f;
+    const float floor_distance = -m_particle_size;
     for (int i = begin; i < end; ++i) {
         float3 &pos = (float3&)m_particles[i].position;
         float d = dot(pos, floor_normal) + floor_distance;
-
+        float3 accel = floor_normal * (-std::min<float>(0.0f, d) * m_pressure_stiffness);
         float3 &vel = (float3&)m_particles[i].velocity;
-        vel = vel + (floor_normal * std::min<float>(0.0f, -d * m_pressure_stiffness) * dt);
+        vel = vel + accel * dt;
     }
 
     // 重力加速
     const float3 gravity_direction = { 0.0f, -1.0f, 0.0f };
     const float gravity_strength = 5.0f;
     for (int i = begin; i < end; ++i) {
+        float3 accel = gravity_direction * gravity_strength;
         float3 &vel = (float3&)m_particles[i].velocity;
-        vel = vel + (gravity_direction * gravity_strength * dt);
+        vel = vel + accel * dt;
     }
 }
 
@@ -255,24 +259,26 @@ void peContext::updateVelocity_SIMD(float dt_, int begin, int end)
     }
 
     // 床との衝突
-    const __m128 floor_normal = _mm_set_ps(0.0f, 1.0f, 0.0f, 0.0f);
-    const __m128 floor_distance = _mm_set1_ps(0.0f);
+    const __m128 floor_normal = _mm_set_ps(0.0f, 0.0f, 1.0f, 0.0f);
+    const __m128 floor_distance = _mm_set1_ps(-m_particle_size);
     for (int i = begin; i < end; ++i) {
         __m128 pos = _mm_load_ps(m_particles[i].position.v);
         __m128 d = _mm_add_ps(dot(pos, floor_normal), floor_distance);
 
         __m128 vel = _mm_load_ps(m_particles[i].velocity.v);
-        __m128 accel = _mm_mul_ps(floor_normal, _mm_min_ps(zero, _mm_mul_ps(_mm_mul_ps(d, negone), pressure_stiffness)));
+        __m128 accel = _mm_mul_ps(floor_normal, _mm_mul_ps(_mm_mul_ps(_mm_min_ps(zero, d), negone), pressure_stiffness));
         vel = _mm_add_ps(vel, _mm_mul_ps(accel, dt));
         _mm_store_ps(m_particles[i].velocity.v, vel);
     }
 
     // 重力加速
-    const __m128 gravity_direction = _mm_set_ps(0.0f, -1.0f, 0.0f, 0.0f);
+    const __m128 gravity_direction = _mm_set_ps(0.0f, 0.0f, -1.0f, 0.0f);
     const __m128 gravity_strength = _mm_set1_ps(5.0f);
     for (int i = begin; i < end; ++i) {
         __m128 vel = _mm_load_ps(m_particles[i].velocity.v);
-        vel = _mm_add_ps(vel, _mm_mul_ps(_mm_mul_ps(gravity_direction, gravity_strength), dt));
+        __m128 accel = _mm_mul_ps(gravity_direction, gravity_strength);
+        vel = _mm_add_ps(vel, _mm_mul_ps(accel, dt));
+        _mm_store_ps(m_particles[i].velocity.v, vel);
     }
 }
 
@@ -326,8 +332,8 @@ void peAoSnize(peParticle *dst, const peParticleSoA &src, int begin, int end)
     {
         soa44 tpos = soa_transpose44(
             ((simdfloat4&)src.pos_x[i]),
-            ((simdfloat4&)src.pos_x[i]),
-            ((simdfloat4&)src.pos_x[i]));
+            ((simdfloat4&)src.pos_y[i]),
+            ((simdfloat4&)src.pos_z[i]));
         dst[i + 0].position = (float4&)tpos.v[0];
         dst[i + 1].position = (float4&)tpos.v[1];
         dst[i + 2].position = (float4&)tpos.v[2];
@@ -335,12 +341,12 @@ void peAoSnize(peParticle *dst, const peParticleSoA &src, int begin, int end)
 
         soa44 tvel = soa_transpose44(
             ((simdfloat4&)src.vel_x[i]),
-            ((simdfloat4&)src.vel_x[i]),
-            ((simdfloat4&)src.vel_x[i]));
-        dst[i + 0].velocity = (float4&)tpos.v[0];
-        dst[i + 1].velocity = (float4&)tpos.v[1];
-        dst[i + 2].velocity = (float4&)tpos.v[2];
-        dst[i + 3].velocity = (float4&)tpos.v[3];
+            ((simdfloat4&)src.vel_y[i]),
+            ((simdfloat4&)src.vel_z[i]));
+        dst[i + 0].velocity = (float4&)tvel.v[0];
+        dst[i + 1].velocity = (float4&)tvel.v[1];
+        dst[i + 2].velocity = (float4&)tvel.v[2];
+        dst[i + 3].velocity = (float4&)tvel.v[3];
     }
 }
 
@@ -426,22 +432,24 @@ void peContext::updateVelocity_SIMDSoA(float dt_, int begin, int end)
     const __m128 floor_normal_x = _mm_set1_ps(0.0f);
     const __m128 floor_normal_y = _mm_set1_ps(1.0f);
     const __m128 floor_normal_z = _mm_set1_ps(0.0f);
-    const __m128 floor_distance = _mm_set1_ps(0.0f);
+    const __m128 floor_distance = _mm_set1_ps(-m_particle_size);
     for (int i = begin; i < end; i += 4) {
         __m128 posx = _mm_load_ps(&m_soa.pos_x[i]);
         __m128 posy = _mm_load_ps(&m_soa.pos_y[i]);
         __m128 posz = _mm_load_ps(&m_soa.pos_z[i]);
         __m128 d = _mm_add_ps(soa_dot(posx, posy, posz, floor_normal_x, floor_normal_y, floor_normal_z), floor_distance);
-        __m128 a = _mm_min_ps(zero, _mm_mul_ps(_mm_mul_ps(d, negone), pressure_stiffness));
-        a = _mm_mul_ps(a, dt);
+        __m128 a = _mm_mul_ps(_mm_mul_ps(_mm_min_ps(zero, d), negone), pressure_stiffness);
 
         __m128 velx = _mm_load_ps(&m_soa.vel_x[i]);
         __m128 vely = _mm_load_ps(&m_soa.vel_y[i]);
         __m128 velz = _mm_load_ps(&m_soa.vel_z[i]);
 
-        velx = _mm_add_ps(velx, _mm_mul_ps(floor_normal_x, a));
-        vely = _mm_add_ps(vely, _mm_mul_ps(floor_normal_y, a));
-        velz = _mm_add_ps(velz, _mm_mul_ps(floor_normal_z, a));
+        __m128 accelx = _mm_mul_ps(floor_normal_x, a);
+        __m128 accely = _mm_mul_ps(floor_normal_y, a);
+        __m128 accelz = _mm_mul_ps(floor_normal_z, a);
+        velx = _mm_add_ps(velx, _mm_mul_ps(accelx, dt));
+        vely = _mm_add_ps(vely, _mm_mul_ps(accely, dt));
+        velz = _mm_add_ps(velz, _mm_mul_ps(accelz, dt));
 
         _mm_store_ps(&m_soa.vel_x[i], velx);
         _mm_store_ps(&m_soa.vel_y[i], vely);
@@ -512,6 +520,7 @@ void peContext::update_ISPC(float dt)
     ic.pressure_stiffness = m_pressure_stiffness;
     ic.particle_size = m_particle_size;
     ic.rcp_particle_size2 = 1.0f / (m_particle_size * 2.0f);
+    ic.timestep = dt;
 
     peSoAnize(m_soa, m_particles, 0, m_particle_count);
     ispc::UpdatePressure(ic, 0, m_particle_count);
@@ -541,7 +550,9 @@ peCLinkage peExport void peUpdate(peContext *ctx, float dt)
 
 peCLinkage peExport void peCopyDataToTexture(peContext *ctx, void *texture, int width, int height)
 {
-    ctx->copyDataToTexture(texture, width, height);
+    if (ctx) {
+        ctx->copyDataToTexture(texture, width, height);
+    }
 }
 
 
