@@ -5,11 +5,13 @@
 
 int         g_batch_begin;
 int         g_num_instances;
-sampler2D   g_instance_data;
 float       g_size;
 float       g_fade_time;
 float       g_spin;
 float4      g_instance_data_size;
+#if defined(SHADER_API_D3D11)
+Texture2D<float4> g_instance_data;
+#endif
 
 
 float3 iq_rand( float3 p )
@@ -26,8 +28,12 @@ void GetParticleParams(int iid, out float4 o_pos, out float4 o_vel)
         g_instance_data_size.xy * float2(fmod(i, g_instance_data_size.z) + 0.5, floor(i/g_instance_data_size.z) + 0.5),
         0.0, 0.0);
     float4 pitch = float4(g_instance_data_size.x, 0.0, 0.0, 0.0);
-    o_pos   = tex2Dlod(g_instance_data, t + pitch*0.0);
-    o_vel   = tex2Dlod(g_instance_data, t + pitch*1.0);
+#if defined(SHADER_API_D3D11)
+    uint x = iid % 128;
+    uint y = iid / 128;
+    o_pos   = g_instance_data[uint2(x*2+0, y)];
+    o_vel   = g_instance_data[uint2(x*2+1, y)];
+#endif
 }
 
 void ParticleTransform(inout appdata_full v, out float4 pos, out float4 vel)

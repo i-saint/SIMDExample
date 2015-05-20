@@ -211,9 +211,9 @@ void peContext::updateVelocity_Plain(float dt, int begin, int end)
         for (int j = 0; j < m_particle_count; ++j) {
             float3 &pos2 = (float3&)m_particles[j].position;
             float3 diff = pos2 - pos1;
-            float3 dir = diff * rcp_particle_size2;
             float dist = length(diff);
             if (dist > 0.0f) {
+                float3 dir = diff * rcp_particle_size2;
                 float3 a = dir * (std::min<float>(0.0f, dist - particle_size2) * m_pressure_stiffness);
                 accel = accel + a;
             }
@@ -321,8 +321,8 @@ void peContext::updateVelocity_SIMD(float dt_, int begin, int end)
         for (int j = 0; j < m_particle_count; ++j) {
             __m128 pos2 = _mm_load_ps(m_particles[j].position.v);
             __m128 diff = _mm_sub_ps(pos2, pos1);
-            __m128 dir = _mm_mul_ps(diff, rcp_particle_size2);
             __m128 dist = length(diff);
+            __m128 dir = _mm_mul_ps(diff, rcp_particle_size2);
             __m128 overlap = _mm_min_ps(zero, _mm_mul_ps(_mm_sub_ps(dist, particle_size2), pressure_stiffness));
             __m128 a = _mm_mul_ps(dir, overlap);
             accel = _mm_add_ps(accel, select(zero, a, _mm_cmpgt_ps(dist, zero)));
@@ -489,13 +489,12 @@ void peContext::updateVelocity_SIMDSoA(float dt_, int begin, int end)
             __m128 diffx = _mm_sub_ps(pos2x, pos1x);
             __m128 diffy = _mm_sub_ps(pos2y, pos1y);
             __m128 diffz = _mm_sub_ps(pos2z, pos1z);
+            __m128 dist = soa_length(diffx, diffy, diffz);
+            __m128 overlap = _mm_min_ps(zero, _mm_mul_ps(_mm_sub_ps(dist, particle_size2), pressure_stiffness));
 
             __m128 dirx = _mm_mul_ps(diffx, rcp_particle_size2);
             __m128 diry = _mm_mul_ps(diffy, rcp_particle_size2);
             __m128 dirz = _mm_mul_ps(diffz, rcp_particle_size2);
-
-            __m128 dist = soa_length(diffx, diffy, diffz);
-            __m128 overlap = _mm_min_ps(zero, _mm_mul_ps(_mm_sub_ps(dist, particle_size2), pressure_stiffness));
 
             __m128 ax = _mm_mul_ps(dirx, overlap);
             __m128 ay = _mm_mul_ps(diry, overlap);
@@ -767,17 +766,17 @@ std::string Benchmark(peContext *ctx, peUpdateRoutine r, bool mt, int loop_count
 const char* peContext::benchmark(int loop_count)
 {
     std::string r;
+    r += Benchmark(this, peE_CSharp,  false, loop_count, "Plain C# (ST)  ");
     r += Benchmark(this, peE_Plain,   false, loop_count, "Plain C++ (ST) ");
     r += Benchmark(this, peE_SIMD,    false, loop_count, "SIMD (ST)      ");
     r += Benchmark(this, peE_SIMDSoA, false, loop_count, "SIMD SoA (ST)  ");
     r += Benchmark(this, peE_ISPC,    false, loop_count, "ISPC (ST)      ");
-    r += Benchmark(this, peE_CSharp,  false, loop_count, "Plain C# (ST)  ");
 
+    r += Benchmark(this, peE_CSharp,  true, loop_count, "Plain C# (MT)  ");
     r += Benchmark(this, peE_Plain,   true, loop_count, "Plain C++ (MT) ");
     r += Benchmark(this, peE_SIMD,    true, loop_count, "SIMD (MT)      ");
     r += Benchmark(this, peE_SIMDSoA, true, loop_count, "SIMD SoA (MT)  ");
     r += Benchmark(this, peE_ISPC,    true, loop_count, "ISPC (MT)      ");
-    r += Benchmark(this, peE_CSharp,  true, loop_count, "Plain C# (MT)  ");
 
     m_benchmark_result = r;
     return m_benchmark_result.c_str();

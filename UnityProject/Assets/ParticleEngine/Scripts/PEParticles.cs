@@ -13,6 +13,8 @@ public class PEParticles : MonoBehaviour
     [StructLayout(LayoutKind.Explicit)]
     public struct peParticle
     {
+        public const int size = 32;
+
         [FieldOffset(0)]  public Vector3 position;
         [FieldOffset(0)]  public Vector4 position4;
         [FieldOffset(16)] public Vector3 velocity;
@@ -27,6 +29,7 @@ public class PEParticles : MonoBehaviour
         SIMDSoA,
         ISPC,
         CSharp,
+        ComputeShader,
     }
 
     [DllImport ("ParticleEngine")] public static extern IntPtr  peCreateContext(int num);
@@ -46,7 +49,23 @@ public class PEParticles : MonoBehaviour
 
 
 
+    public struct CSParams
+    {
+        public const int size = 32;
+
+        public int particle_count;
+        public float particle_size;
+        public float rcp_particle_size2;
+        public float pressure_stiffness;
+        public float wall_stiffness;
+        public float timestep;
+
+        float pad1, pad2;
+    };
+
+
     public const int DataTextureWidth = 128;
+    const int KernelBlockSize = 128;
 
     public peUpdateRoutine m_routine = peUpdateRoutine.ISPC;
     public bool m_multi_threading = true;
@@ -55,7 +74,14 @@ public class PEParticles : MonoBehaviour
     public float m_pressure_stiffness = 500.0f;
     public float m_wall_stiffness = 1500.0f;
 
+    public ComputeShader m_cs_particle_core;
+    public ComputeBuffer m_cb_params;
+    public ComputeBuffer m_cb_particles;
+    CSParams[] m_csparams;
+
     IntPtr m_ctx;
+
+
 
     public void SetUpdateRoutibe(int v)
     {
@@ -75,20 +101,61 @@ public class PEParticles : MonoBehaviour
 
     public void CopyDataToTexture(Texture tex)
     {
-        peCopyDataToTexture(m_ctx, tex.GetNativeTexturePtr(), tex.width, tex.height);
+        if (m_routine == peUpdateRoutine.ComputeShader)
+        {
+            m_cs_particle_core.SetTexture(2, "g_drawdata", tex);
+            m_cs_particle_core.Dispatch(2, m_particle_count / KernelBlockSize, 1, 1);
+        }
+        else
+        {
+            peCopyDataToTexture(m_ctx, tex.GetNativeTexturePtr(), tex.width, tex.height);
+        }
     }
 
 
-
-    void ResetContext()
+    void ReleaseContext()
     {
         if (m_ctx != IntPtr.Zero)
         {
             peDestroyContext(m_ctx);
             m_ctx = IntPtr.Zero;
         }
+        if (m_cb_params != null)
+        {
+            m_cb_params.Release(); m_cb_params = null;
+            m_cb_particles.Release(); m_cb_particles = null;
+        }
+    }
+
+    void ResetContext()
+    {
+        ReleaseContext();
+
         m_particle_count = Mathf.Max(DataTextureWidth, m_particle_count);
         m_ctx = peCreateContext(m_particle_count);
+
+        if (SystemInfo.supportsComputeShaders)
+        {
+            m_cb_params = new ComputeBuffer(1, CSParams.size);
+            m_cb_particles = new ComputeBuffer(m_particle_count, peParticle.size);
+            m_csparams = new CSParams[1];
+            {
+                var tmp = new peParticle[m_particle_count];
+                for (int i = 0; i < tmp.Length; ++i )
+                {
+                    tmp[i].position = new Vector3(
+                        UnityEngine.Random.Range(-5.0f, 5.0f),
+                        UnityEngine.Random.Range(-5.0f, 5.0f) + 5.0f,
+                        UnityEngine.Random.Range(-5.0f, 5.0f) );
+                }
+                m_cb_particles.SetData(tmp);
+            }
+            for (int i = 0; i < 3; ++i )
+            {
+                m_cs_particle_core.SetBuffer(i, "g_params", m_cb_params);
+                m_cs_particle_core.SetBuffer(i, "g_particles", m_cb_particles);
+            }
+        }
     }
 
 
@@ -99,20 +166,26 @@ public class PEParticles : MonoBehaviour
 
     void OnDisable()
     {
-        peDestroyContext(m_ctx);
+        ReleaseContext();
         m_ctx = IntPtr.Zero;
     }
 
     void Update()
     {
-        peSetUpdateRoutine(m_ctx, m_routine);
-        peEnableMultiThreading(m_ctx, m_multi_threading);
-        peSetParticleSize(m_ctx, m_particle_size);
-        peSetPressureStiffness(m_ctx, m_pressure_stiffness);
-        peSetWallStiffness(m_ctx, m_wall_stiffness);
-        peSetCSUpdateRoutine(m_ctx, Update_Velocity, Update_Position);
-
-        peUpdate(m_ctx, Time.deltaTime);
+        if(m_routine==peUpdateRoutine.ComputeShader)
+        {
+            Update_ComputeShader();
+        }
+        else
+        {
+            peSetUpdateRoutine(m_ctx, m_routine);
+            peEnableMultiThreading(m_ctx, m_multi_threading);
+            peSetParticleSize(m_ctx, m_particle_size);
+            peSetPressureStiffness(m_ctx, m_pressure_stiffness);
+            peSetWallStiffness(m_ctx, m_wall_stiffness);
+            peSetCSUpdateRoutine(m_ctx, Update_Velocity, Update_Position);
+            peUpdate(m_ctx, Time.deltaTime);
+        }
     }
 
 
@@ -174,6 +247,26 @@ public class PEParticles : MonoBehaviour
             pos = pos + (vel * dt);
             particles[i].position = pos;
         }
+    }
+
+    void Update_ComputeShader()
+    {
+        if(!SystemInfo.supportsComputeShaders)
+        {
+            Debug.Log("ComputeShader is not available.");
+            return;
+        }
+
+        m_csparams[0].particle_count = m_particle_count;
+        m_csparams[0].particle_size = m_particle_size;
+        m_csparams[0].rcp_particle_size2 = 1.0f / (m_particle_size * 2.0f);
+        m_csparams[0].pressure_stiffness = m_pressure_stiffness;
+        m_csparams[0].wall_stiffness = m_wall_stiffness;
+        m_csparams[0].timestep = Time.deltaTime;
+        m_cb_params.SetData(m_csparams);
+
+        m_cs_particle_core.Dispatch(0, m_particle_count/KernelBlockSize, 1, 1);
+        m_cs_particle_core.Dispatch(1, m_particle_count/KernelBlockSize, 1, 1);
     }
 
     public void Benchmark()

@@ -12,7 +12,7 @@ using UnityEditor;
 public class PERenderer : BatchRendererBase
 {
     PEParticles m_particles;
-    RenderTexture m_data_texture;
+    public RenderTexture m_data_texture;
 
 
     public RenderTexture GetInstanceTexture() { return m_data_texture; }
@@ -63,8 +63,10 @@ public class PERenderer : BatchRendererBase
     {
         ReleaseGPUResources();
 
-        m_data_texture = new RenderTexture(PEParticles.DataTextureWidth * 2, 128, 0, RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Default);
+        m_data_texture = new RenderTexture(PEParticles.DataTextureWidth * 2, 128, 0, RenderTextureFormat.ARGBFloat);
         m_data_texture.filterMode = FilterMode.Point;
+        m_data_texture.enableRandomWrite = true;
+        m_data_texture.generateMips = false;
         m_data_texture.Create();
 
         UpdateGPUResources();
@@ -85,7 +87,7 @@ public class PERenderer : BatchRendererBase
     public override void OnEnable()
     {
         m_particles = GetComponent<PEParticles>();
-        m_max_instances = 8192;
+        m_max_instances = 16384;
 
         base.OnEnable();
         ResetGPUResoures();
