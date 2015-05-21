@@ -692,34 +692,14 @@ void peContext::update_CSharp(float dt)
 peCLinkage peExport peContext* peCreateContext(int n) { return new peContext(n); }
 peCLinkage peExport void peDestroyContext(peContext *ctx) { delete ctx; }
 
-peCLinkage peExport void peSetUpdateRoutine(peContext *ctx, peUpdateRoutine v)
+peCLinkage peExport void peSetParams(peContext *ctx, peParams *v)
 {
-    ctx->setUpdateRoutine(v);
-}
-
-peCLinkage peExport void peEnableMultiThreading(peContext *ctx, bool v)
-{
-    ctx->enbaleMultiThreading(v);
-}
-
-peCLinkage peExport void peSetParticleSize(peContext *ctx, float v)
-{
-    ctx->setParticleSize(v);
-}
-
-peCLinkage peExport void peSetPressureStiffness(peContext *ctx, float v)
-{
-    ctx->setPressureStiffness(v);
-}
-
-peCLinkage peExport void peSetWallStiffness(peContext *ctx, float v)
-{
-    ctx->setPressureStiffness(v);
-}
-
-peCLinkage peExport void peSetCSUpdateRoutine(peContext *ctx, CSUpdateRoutine vel, CSUpdateRoutine pos)
-{
-    ctx->setCSUpdateRoutine(vel, pos);
+    ctx->setUpdateRoutine(v->routine);
+    ctx->enbaleMultiThreading(v->multi_threading);
+    ctx->setParticleSize(v->particle_size);
+    ctx->setPressureStiffness(v->pressure_stiffness);
+    ctx->setWallStiffness(v->wall_stiffness);
+    ctx->setCSUpdateRoutine(v->update_velocity, v->update_position);
 }
 
 peCLinkage peExport void peUpdate(peContext *ctx, float dt)
@@ -748,9 +728,9 @@ peCLinkage peExport void peResetParticles(peContext *ctx)
 std::string Benchmark(peContext *ctx, peUpdateRoutine r, bool mt, int loop_count, const char *name)
 {
     float average = 0.0f;
-    peResetParticles(ctx);
-    peEnableMultiThreading(ctx, mt);
-    peSetUpdateRoutine(ctx, r);
+    ctx->resetParticles();
+    ctx->enbaleMultiThreading(mt);
+    ctx->setUpdateRoutine(r);
     for (int i = 0; i < loop_count; ++i) {
         clock_t t = clock();
         peUpdate(ctx, 1.0f / 60.0f);

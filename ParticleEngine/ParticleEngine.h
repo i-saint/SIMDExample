@@ -50,16 +50,22 @@ enum peUpdateRoutine
     peE_CSharp,
 };
 
+struct peParams
+{
+    peUpdateRoutine routine;
+    bool multi_threading;
+    float particle_size;
+    float pressure_stiffness;
+    float wall_stiffness;
+    CSUpdateRoutine update_velocity;
+    CSUpdateRoutine update_position;
+};
+
+
 peCLinkage peExport peContext*  peCreateContext(int n);
 peCLinkage peExport void        peDestroyContext(peContext *ctx);
 
-peCLinkage peExport void        peSetUpdateRoutine(peContext *ctx, peUpdateRoutine v);
-peCLinkage peExport void        peEnableMultiThreading(peContext *ctx, bool v);
-peCLinkage peExport void        peSetParticleSize(peContext *ctx, float v);
-peCLinkage peExport void        peSetPressureStiffness(peContext *ctx, float v);
-peCLinkage peExport void        peSetWallStiffness(peContext *ctx, float v);
-peCLinkage peExport void        peSetCSUpdateRoutine(peContext *ctx, CSUpdateRoutine vel, CSUpdateRoutine pos);
-
+peCLinkage peExport void        peSetParams(peContext *ctx, peParams *v);
 peCLinkage peExport void        peUpdate(peContext *ctx, float dt);
 peCLinkage peExport void        peCopyDataToTexture(peContext *ctx, void *texture, int width, int height);
 peCLinkage peExport peParticle* peGetParticles(peContext *ctx);

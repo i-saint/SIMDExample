@@ -74,12 +74,21 @@ public class PERenderer : BatchRendererBase
 
     public override void UpdateGPUResources()
     {
-        m_particles.CopyDataToTexture(m_data_texture);
+        bool use_buffer = m_particles.m_routine == PEParticles.peUpdateRoutine.ComputeShader && m_particles.m_cb_particles != null;
+        if (!use_buffer)
+        {
+            m_particles.CopyDataToTexture(m_data_texture);
+        }
 
         ForEachEveryMaterials((v) =>
         {
             v.SetInt("g_num_max_instances", m_max_instances);
             v.SetInt("g_num_instances", m_instance_count);
+            v.SetInt("g_use_buffer", use_buffer ? 1 : 0);
+            if (use_buffer)
+            {
+                v.SetBuffer("g_instance_buffer", m_particles.m_cb_particles);
+            }
         });
     }
 

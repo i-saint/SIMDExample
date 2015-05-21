@@ -32,15 +32,21 @@ public class PEParticles : MonoBehaviour
         ComputeShader,
     }
 
+    public struct peParams
+    {
+        public peUpdateRoutine routine;
+        public bool multi_threading;
+        public float particle_size;
+        public float pressure_stiffness;
+        public float wall_stiffness;
+        public CSUpdateRoutine update_velocity;
+        public CSUpdateRoutine update_position;
+    }
+
     [DllImport ("ParticleEngine")] public static extern IntPtr  peCreateContext(int num);
     [DllImport ("ParticleEngine")] public static extern void    peDestroyContext(IntPtr ctx);
 
-    [DllImport ("ParticleEngine")] public static extern void    peSetUpdateRoutine(IntPtr ctx, peUpdateRoutine v);
-    [DllImport ("ParticleEngine")] public static extern void    peEnableMultiThreading(IntPtr ctx, bool v);
-    [DllImport ("ParticleEngine")] public static extern void    peSetParticleSize(IntPtr ctx, float sv);
-    [DllImport ("ParticleEngine")] public static extern void    peSetPressureStiffness(IntPtr ctx, float v);
-    [DllImport ("ParticleEngine")] public static extern void    peSetWallStiffness(IntPtr ctx, float v);
-    [DllImport ("ParticleEngine")] public static extern void    peSetCSUpdateRoutine(IntPtr ctx, CSUpdateRoutine vel, CSUpdateRoutine pos);
+    [DllImport ("ParticleEngine")] public static extern void    peSetParams(IntPtr ctx, ref peParams v);
     [DllImport ("ParticleEngine")] public static extern void    peUpdate(IntPtr ctx, float dt);
     [DllImport ("ParticleEngine")] public static extern void    peCopyDataToTexture(IntPtr ctx, IntPtr texture, int width, int height);
     [DllImport ("ParticleEngine")] unsafe public static extern peParticle* peGetParticles(IntPtr ctx);
@@ -65,7 +71,7 @@ public class PEParticles : MonoBehaviour
 
 
     public const int DataTextureWidth = 128;
-    const int KernelBlockSize = 128;
+    const int KernelBlockSize = 256;
 
     public peUpdateRoutine m_routine = peUpdateRoutine.ISPC;
     public bool m_multi_threading = true;
@@ -99,17 +105,9 @@ public class PEParticles : MonoBehaviour
         m_multi_threading = v;
     }
 
-    public void CopyDataToTexture(Texture tex)
+    public void CopyDataToTexture(RenderTexture tex)
     {
-        if (m_routine == peUpdateRoutine.ComputeShader)
-        {
-            m_cs_particle_core.SetTexture(2, "g_drawdata", tex);
-            m_cs_particle_core.Dispatch(2, m_particle_count / KernelBlockSize, 1, 1);
-        }
-        else
-        {
-            peCopyDataToTexture(m_ctx, tex.GetNativeTexturePtr(), tex.width, tex.height);
-        }
+        peCopyDataToTexture(m_ctx, tex.GetNativeTexturePtr(), tex.width, tex.height);
     }
 
 
@@ -150,7 +148,7 @@ public class PEParticles : MonoBehaviour
                 }
                 m_cb_particles.SetData(tmp);
             }
-            for (int i = 0; i < 3; ++i )
+            for (int i = 0; i < 2; ++i )
             {
                 m_cs_particle_core.SetBuffer(i, "g_params", m_cb_params);
                 m_cs_particle_core.SetBuffer(i, "g_particles", m_cb_particles);
@@ -178,16 +176,23 @@ public class PEParticles : MonoBehaviour
         }
         else
         {
-            peSetUpdateRoutine(m_ctx, m_routine);
-            peEnableMultiThreading(m_ctx, m_multi_threading);
-            peSetParticleSize(m_ctx, m_particle_size);
-            peSetPressureStiffness(m_ctx, m_pressure_stiffness);
-            peSetWallStiffness(m_ctx, m_wall_stiffness);
-            peSetCSUpdateRoutine(m_ctx, Update_Velocity, Update_Position);
+            PassParametersToPlugin();
             peUpdate(m_ctx, Time.deltaTime);
         }
     }
 
+    public void PassParametersToPlugin()
+    {
+        peParams p;
+        p.routine = m_routine;
+        p.multi_threading = m_multi_threading;
+        p.pressure_stiffness = m_pressure_stiffness;
+        p.wall_stiffness = m_wall_stiffness;
+        p.particle_size = m_particle_size;
+        p.update_velocity = Update_Velocity;
+        p.update_position = Update_Position;
+        peSetParams(m_ctx, ref p);
+    }
 
     unsafe void Update_Velocity(float dt, int begin, int end)
     {
@@ -271,7 +276,7 @@ public class PEParticles : MonoBehaviour
 
     public void Benchmark()
     {
-        peSetCSUpdateRoutine(m_ctx, Update_Velocity, Update_Position);
+        PassParametersToPlugin();
         IntPtr str = peBenchmark(m_ctx, 1);
         string result = Marshal.PtrToStringAnsi(str);
         Debug.Log(result);

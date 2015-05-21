@@ -9,31 +9,38 @@ float       g_size;
 float       g_fade_time;
 float       g_spin;
 float4      g_instance_data_size;
+sampler2D   g_instance_data;
+int         g_use_buffer;
+
 #if defined(SHADER_API_D3D11)
-Texture2D<float4> g_instance_data;
+struct Particle
+{
+    float4 position;
+    float4 velocity;
+};
+StructuredBuffer<Particle> g_instance_buffer;
 #endif
 
-
-float3 iq_rand( float3 p )
-{
-    p = float3( dot(p,float3(127.1,311.7,311.7)), dot(p,float3(269.5,183.3,183.3)), dot(p,float3(269.5,183.3,183.3)) );
-    return frac(sin(p)*43758.5453)*2.0-1.0;
-}
 
 
 void GetParticleParams(int iid, out float4 o_pos, out float4 o_vel)
 {
-    float i = iid * 2;
-    float4 t = float4(
-        g_instance_data_size.xy * float2(fmod(i, g_instance_data_size.z) + 0.5, floor(i/g_instance_data_size.z) + 0.5),
-        0.0, 0.0);
-    float4 pitch = float4(g_instance_data_size.x, 0.0, 0.0, 0.0);
 #if defined(SHADER_API_D3D11)
-    uint x = iid % 128;
-    uint y = iid / 128;
-    o_pos   = g_instance_data[uint2(x*2+0, y)];
-    o_vel   = g_instance_data[uint2(x*2+1, y)];
+    if(g_use_buffer) {
+        o_pos   = g_instance_buffer[iid].position;
+        o_vel   = g_instance_buffer[iid].velocity;
+    }
+    else
 #endif
+    {
+        float i = iid * 2;
+        float4 t = float4(
+            g_instance_data_size.xy * float2(fmod(i, g_instance_data_size.z) + 0.5, floor(i/g_instance_data_size.z) + 0.5),
+            0.0, 0.0);
+        float4 pitch = float4(g_instance_data_size.x, 0.0, 0.0, 0.0);
+        o_pos = tex2Dlod(g_instance_data, t + pitch*0.0);
+        o_vel = tex2Dlod(g_instance_data, t + pitch*1.0);
+    }
 }
 
 void ParticleTransform(inout appdata_full v, out float4 pos, out float4 vel)

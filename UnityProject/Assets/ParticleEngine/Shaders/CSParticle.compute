@@ -1,9 +1,7 @@
 ﻿#pragma kernel UpdateVelocity
 #pragma kernel UpdatePosition
-#pragma kernel UpdateDrawData
 
-#define KernelBlockSize 128
-#define DataTextureWidth 128
+#define KernelBlockSize 256
 
 
 struct Params
@@ -25,7 +23,6 @@ struct Particle
 
 StructuredBuffer<Params>        g_params;
 RWStructuredBuffer<Particle>    g_particles;
-RWTexture2D<float4>             g_drawdata;
 
 
 [numthreads(KernelBlockSize,1,1)]
@@ -73,20 +70,3 @@ void UpdatePosition(uint3 dtid : SV_DispatchThreadID)
     float3 vel = g_particles[tid].velocity.xyz;
     g_particles[tid].position.xyz = pos + vel * g_params[0].timestep;
 }
-
-
-[numthreads(KernelBlockSize,1,1)]
-void UpdateDrawData(uint3 dtid : SV_DispatchThreadID)
-{
-    uint tid = dtid.x;
-
-    float4 pos = g_particles[tid].position;
-    float4 vel = g_particles[tid].velocity;
-    pos.w = vel.w = 1.0;
-
-    uint tx = tid % DataTextureWidth;
-    uint ty = tid / DataTextureWidth;
-    g_drawdata[uint2(tx*2+0, ty)] = pos;
-    g_drawdata[uint2(tx*2+1, ty)] = vel;
-}
-
