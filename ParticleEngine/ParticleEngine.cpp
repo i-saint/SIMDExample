@@ -668,21 +668,30 @@ void peContext::update_CSharp(float dt)
 {
     if (m_cs_update_vel == nullptr || m_cs_update_pos == nullptr) { return; }
 
+    peParams p;
+    p.particles = m_particles;
+    p.particles_count = m_particle_count;
+    p.routine = m_routine;
+    p.multi_threading = m_multi_threading;
+    p.particle_size = m_particle_size;
+    p.pressure_stiffness = m_pressure_stiffness;
+    p.wall_stiffness = m_wall_stiffness;
+
     if (m_multi_threading)
     {
         parallel_for(0, m_particle_count, m_task_granularity, [&](int begin){
             int end = std::min<int>(m_particle_count, begin + m_task_granularity);
-            m_cs_update_vel(dt, begin, end);
+            m_cs_update_vel(&p, dt, begin, end);
         });
         parallel_for(0, m_particle_count, m_task_granularity, [&](int begin){
             int end = std::min<int>(m_particle_count, begin + m_task_granularity);
-            m_cs_update_pos(dt, begin, end);
+            m_cs_update_pos(&p, dt, begin, end);
         });
     }
     else
     {
-        m_cs_update_vel(dt, 0, m_particle_count);
-        m_cs_update_pos(dt, 0, m_particle_count);
+        m_cs_update_vel(&p, dt, 0, m_particle_count);
+        m_cs_update_pos(&p, dt, 0, m_particle_count);
     }
 }
 
@@ -722,47 +731,4 @@ peCLinkage peExport peParticle* peGetParticles(peContext *ctx)
 peCLinkage peExport void peResetParticles(peContext *ctx)
 {
     ctx->resetParticles();
-}
-
-
-std::string Benchmark(peContext *ctx, peUpdateRoutine r, bool mt, int loop_count, const char *name)
-{
-    float average = 0.0f;
-    ctx->resetParticles();
-    ctx->enbaleMultiThreading(mt);
-    ctx->setUpdateRoutine(r);
-    for (int i = 0; i < loop_count; ++i) {
-        clock_t t = clock();
-        peUpdate(ctx, 1.0f / 60.0f);
-        average += float(clock() - t) / CLOCKS_PER_SEC * 1000.0f;
-    }
-    average /= loop_count;
-
-    char buf[512];
-    sprintf(buf, "%s: average %.2fms\n", name, average);
-    return buf;
-}
-
-const char* peContext::benchmark(int loop_count)
-{
-    std::string r;
-    r += Benchmark(this, peE_CSharp,  false, loop_count, "Plain C# (ST)  ");
-    r += Benchmark(this, peE_Plain,   false, loop_count, "Plain C++ (ST) ");
-    r += Benchmark(this, peE_SIMD,    false, loop_count, "SIMD (ST)      ");
-    r += Benchmark(this, peE_SIMDSoA, false, loop_count, "SIMD SoA (ST)  ");
-    r += Benchmark(this, peE_ISPC,    false, loop_count, "ISPC (ST)      ");
-
-    r += Benchmark(this, peE_CSharp,  true, loop_count, "Plain C# (MT)  ");
-    r += Benchmark(this, peE_Plain,   true, loop_count, "Plain C++ (MT) ");
-    r += Benchmark(this, peE_SIMD,    true, loop_count, "SIMD (MT)      ");
-    r += Benchmark(this, peE_SIMDSoA, true, loop_count, "SIMD SoA (MT)  ");
-    r += Benchmark(this, peE_ISPC,    true, loop_count, "ISPC (MT)      ");
-
-    m_benchmark_result = r;
-    return m_benchmark_result.c_str();
-}
-
-peCLinkage peExport const char* peBenchmark(peContext *ctx, int loop_count)
-{
-    return ctx->benchmark(loop_count);
 }

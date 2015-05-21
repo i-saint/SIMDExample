@@ -41,7 +41,7 @@ void UpdateVelocity(uint3 dtid : SV_DispatchThreadID)
         float dist = length(diff);
         float3 dir = diff * g_params[0].rcp_particle_size2;
         float3 a = dir * (min(0.0f, dist - particle_size2) * g_params[0].pressure_stiffness);
-        accel = accel + a * min(dist > 0.0, 1.0);
+        accel = accel + a * (dist > 0.0, 1.0);
     }
 
     // 床との衝突

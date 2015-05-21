@@ -39,8 +39,6 @@ public:
 };
 peCopyToTextureBase* peCreateCopyToTextureD3D11(void *device);
 
-typedef void(__stdcall *CSUpdateRoutine)(float dt, int begin, int end);
-
 enum peUpdateRoutine
 {
     peE_Plain,
@@ -50,8 +48,13 @@ enum peUpdateRoutine
     peE_CSharp,
 };
 
+struct peParams;
+typedef void(__stdcall *CSUpdateRoutine)(peParams *params, float dt, int begin, int end);
+
 struct peParams
 {
+    peParticle *particles;
+    int particles_count;
     peUpdateRoutine routine;
     bool multi_threading;
     float particle_size;
@@ -70,5 +73,3 @@ peCLinkage peExport void        peUpdate(peContext *ctx, float dt);
 peCLinkage peExport void        peCopyDataToTexture(peContext *ctx, void *texture, int width, int height);
 peCLinkage peExport peParticle* peGetParticles(peContext *ctx);
 peCLinkage peExport void        peResetParticles(peContext *ctx);
-
-peCLinkage peExport const char* peBenchmark(peContext *ctx, int loop_count);
