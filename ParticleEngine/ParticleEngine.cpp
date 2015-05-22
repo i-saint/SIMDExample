@@ -213,6 +213,7 @@ void peContext::updateVelocity_Plain(float dt, int begin, int end)
             float3 diff = pos2 - pos1;
             float dist = length(diff);
             if (dist > 0.0f) {
+                // 正確には dir = diff / dist とすべきだが、パーティクルの直径の逆数で近似することで割り算を省いて高速化
                 float3 dir = diff * rcp_particle_size2;
                 float3 a = dir * (std::min<float>(0.0f, dist - particle_size2) * m_pressure_stiffness);
                 accel = accel + a;
