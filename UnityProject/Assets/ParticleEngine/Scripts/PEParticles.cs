@@ -342,7 +342,8 @@ public class PEParticles : MonoBehaviour
         var particles = new peParticle[BenchmarkParticleCount];
 
         {
-            for (int i = 0; i < particles.Length; ++i )
+            UnityEngine.Random.seed = 0;
+            for (int i = 0; i < particles.Length; ++i)
             {
                 particles[i].position = new Vector3(
                     UnityEngine.Random.Range(-5.0f, 5.0f),
