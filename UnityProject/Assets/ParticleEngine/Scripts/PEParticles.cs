@@ -75,7 +75,7 @@ public class PEParticles : MonoBehaviour
     public const int DataTextureWidth = 128;
     const int KernelBlockSize = 256;
 
-    public bool m_stop = false;
+    public bool m_pause = false;
     public peUpdateRoutine m_routine = peUpdateRoutine.ISPC;
     public bool m_multi_threading = true;
     public int m_particle_count = 1024*4;
@@ -114,7 +114,7 @@ public class PEParticles : MonoBehaviour
 
     public void EnableStop(bool v)
     {
-        m_stop = v;
+        m_pause = v;
     }
 
     public void ResetParticles()
@@ -189,7 +189,16 @@ public class PEParticles : MonoBehaviour
 
     unsafe void Update()
     {
-        if (m_stop) return;
+        if(Input.GetKeyDown(KeyCode.R))
+        {
+            ResetParticles();
+        }
+        if (Input.GetKeyDown(KeyCode.P))
+        {
+            m_pause = !m_pause;
+        }
+
+        if (m_pause) return;
 
         float t = Time.realtimeSinceStartup;
         if(m_routine==peUpdateRoutine.ComputeShader)

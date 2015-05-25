@@ -23,7 +23,7 @@ public class CameraController : MonoBehaviour
         if (m_camera == null || m_look_target == null) return;
         Transform cam_t = m_camera.GetComponent<Transform>();
 
-        if (Input.GetKeyUp(KeyCode.R)) { m_rotate_by_time = !m_rotate_by_time; }
+        //if (Input.GetKeyUp(KeyCode.R)) { m_rotate_by_time = !m_rotate_by_time; }
 
         Vector3 pos = cam_t.position - m_look_target.position;
         if (m_rotate_by_time)
