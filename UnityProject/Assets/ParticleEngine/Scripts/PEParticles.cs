@@ -83,6 +83,8 @@ public class PEParticles : MonoBehaviour
     public float m_pressure_stiffness = 500.0f;
     public float m_wall_stiffness = 1500.0f;
 
+    public float m_update_time;
+
     public ComputeShader m_cs_particle_core;
     public ComputeBuffer m_cb_params;
     public ComputeBuffer m_cb_particles;
@@ -189,6 +191,7 @@ public class PEParticles : MonoBehaviour
     {
         if (m_stop) return;
 
+        float t = Time.realtimeSinceStartup;
         if(m_routine==peUpdateRoutine.ComputeShader)
         {
             Update_ComputeShader(Time.deltaTime);
@@ -206,6 +209,7 @@ public class PEParticles : MonoBehaviour
             peSetParams(m_ctx, ref p);
             peUpdate(m_ctx, Time.deltaTime);
         }
+        m_update_time = Time.realtimeSinceStartup - t;
     }
 
     unsafe static void Update_Velocity(peParams* p, float dt, int begin, int end)

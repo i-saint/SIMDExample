@@ -274,7 +274,7 @@ void peContext::update_Plain(float dt)
 
 
 
-// SIMD implementation
+// SSE implementation
 
 inline __m128 select(__m128 v1, __m128 v2, __m128 control)
 {
@@ -389,7 +389,9 @@ void peContext::update_SIMD(float dt)
 
 
 
-// SIMD SoA implementation
+// SSE with SoA implementation
+
+
 
 void peSoAnize(peParticleSoA &dst, const peParticle *src, int begin, int end)
 {
